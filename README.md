@@ -17,6 +17,20 @@ GOCACHE=/tmp/go-native-gocache go test ./...
 GOCACHE=/tmp/go-native-gocache go vet ./...
 ```
 
+## CLI
+
+Run the narrow Milestone 0 CLI directly during development:
+
+```bash
+go run ./cmd/gonative doctor
+go run ./cmd/gonative build ios
+go run ./cmd/gonative run ios
+go run ./cmd/gonative build android
+go run ./cmd/gonative run android
+```
+
+Or install it on your `PATH` with `go install ./cmd/gonative`. Project initialization and generalized application builds are intentionally deferred.
+
 ## Build the iOS counter
 
 ```bash
