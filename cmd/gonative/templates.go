@@ -449,7 +449,7 @@ gonative run android
 `, name, name),
 
 		// iOS Host & Xcode Project
-		fmt.Sprintf("ios/%s.xcodeproj/project.pbxproj", name): generatePbxproj(name, pkg),
+		fmt.Sprintf("ios/%s.xcodeproj/project.pbxproj", name):                          generatePbxproj(name, pkg),
 		fmt.Sprintf("ios/%s.xcodeproj/xcshareddata/xcschemes/%s.xcscheme", name, name): generateXcscheme(name),
 		"ios/GoNativeRenderer.h": `#import <UIKit/UIKit.h>
 
