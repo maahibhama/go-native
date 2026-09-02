@@ -65,18 +65,43 @@ func (r *Runtime) render() error {
 }
 
 func stabilizeIDs(oldNode, newNode *ui.Node) {
-	if oldNode == nil || newNode == nil || oldNode.Type != newNode.Type {
+	if oldNode == nil || newNode == nil || oldNode.Type != newNode.Type || newNode.ExplicitID {
 		return
 	}
 	newNode.ID = oldNode.ID
-	for i := 0; i < len(oldNode.Children) && i < len(newNode.Children); i++ {
-		stabilizeIDs(oldNode.Children[i], newNode.Children[i])
+	oldExplicit := make(map[ui.NodeID]*ui.Node)
+	for _, child := range oldNode.Children {
+		if child.ExplicitID {
+			oldExplicit[child.ID] = child
+		}
+	}
+	for i, child := range newNode.Children {
+		if child.ExplicitID {
+			if oldChild := oldExplicit[child.ID]; oldChild != nil {
+				stabilizeDescendants(oldChild, child)
+			}
+			continue
+		}
+		if i < len(oldNode.Children) && !oldNode.Children[i].ExplicitID {
+			stabilizeIDs(oldNode.Children[i], child)
+		}
+	}
+}
+
+func stabilizeDescendants(oldNode, newNode *ui.Node) {
+	if oldNode == nil || newNode == nil || oldNode.ID != newNode.ID || oldNode.Type != newNode.Type {
+		return
+	}
+	for i, child := range newNode.Children {
+		if i < len(oldNode.Children) {
+			stabilizeIDs(oldNode.Children[i], child)
+		}
 	}
 }
 
 func (r *Runtime) bindHandlers(oldNode, n *ui.Node) {
 	if n.Type == ui.NodeButton {
-		if fn := ui.TakeButtonCallback(n.ID); fn != nil {
+		if fn := n.Press; fn != nil {
 			if oldNode != nil && oldNode.Type == n.Type && oldNode.Props.OnPress != 0 {
 				n.Props.OnPress = oldNode.Props.OnPress
 				r.events.Replace(n.Props.OnPress, fn)
@@ -85,9 +110,19 @@ func (r *Runtime) bindHandlers(oldNode, n *ui.Node) {
 			}
 		}
 	}
+	oldExplicit := make(map[ui.NodeID]*ui.Node)
+	if oldNode != nil {
+		for _, child := range oldNode.Children {
+			if child.ExplicitID {
+				oldExplicit[child.ID] = child
+			}
+		}
+	}
 	for i, child := range n.Children {
 		var oldChild *ui.Node
-		if oldNode != nil && i < len(oldNode.Children) {
+		if child.ExplicitID {
+			oldChild = oldExplicit[child.ID]
+		} else if oldNode != nil && i < len(oldNode.Children) && !oldNode.Children[i].ExplicitID {
 			oldChild = oldNode.Children[i]
 		}
 		r.bindHandlers(oldChild, child)

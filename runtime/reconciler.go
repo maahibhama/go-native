@@ -47,9 +47,11 @@ func deleteSubtree(out *[]Mutation, parent ui.NodeID, index int, node *ui.Node) 
 }
 
 func reconcileChildren(out *[]Mutation, parent ui.NodeID, oldChildren, newChildren []*ui.Node) {
-	oldByID := make(map[ui.NodeID]int, len(oldChildren))
+	oldByID := make(map[ui.NodeID]*ui.Node, len(oldChildren))
+	working := make([]ui.NodeID, len(oldChildren))
 	for i, child := range oldChildren {
-		oldByID[child.ID] = i
+		oldByID[child.ID] = child
+		working[i] = child.ID
 	}
 	newIDs := make(map[ui.NodeID]bool, len(newChildren))
 	for _, child := range newChildren {
@@ -58,17 +60,43 @@ func reconcileChildren(out *[]Mutation, parent ui.NodeID, oldChildren, newChildr
 	for i := len(oldChildren) - 1; i >= 0; i-- {
 		if !newIDs[oldChildren[i].ID] {
 			deleteSubtree(out, parent, i, oldChildren[i])
+			working = append(working[:i], working[i+1:]...)
 		}
 	}
 	for i, child := range newChildren {
-		oldIndex, exists := oldByID[child.ID]
+		oldChild, exists := oldByID[child.ID]
 		if !exists {
 			createSubtree(out, parent, i, child)
+			working = insertID(working, i, child.ID)
 			continue
 		}
-		if oldIndex != i {
-			*out = append(*out, Mutation{Type: MutationMove, NodeID: child.ID, ParentID: parent, FromIndex: int32(oldIndex), Index: int32(i)})
+		current := indexOf(working, child.ID)
+		if current != i {
+			*out = append(*out, Mutation{Type: MutationMove, NodeID: child.ID, ParentID: parent, FromIndex: int32(current), Index: int32(i)})
+			working = moveID(working, current, i)
 		}
-		reconcileNode(out, parent, i, oldChildren[oldIndex], child)
+		reconcileNode(out, parent, i, oldChild, child)
 	}
+}
+
+func indexOf(ids []ui.NodeID, id ui.NodeID) int {
+	for i, candidate := range ids {
+		if candidate == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func insertID(ids []ui.NodeID, index int, id ui.NodeID) []ui.NodeID {
+	ids = append(ids, 0)
+	copy(ids[index+1:], ids[index:])
+	ids[index] = id
+	return ids
+}
+
+func moveID(ids []ui.NodeID, from, to int) []ui.NodeID {
+	id := ids[from]
+	ids = append(ids[:from], ids[from+1:]...)
+	return insertID(ids, to, id)
 }

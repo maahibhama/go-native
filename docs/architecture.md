@@ -29,7 +29,7 @@ The renderer receives complete props on create/update. This slightly enlarges up
 
 ## Identity and reconciliation
 
-For the unkeyed Milestone 0 tree, the runtime preserves identity by matching type and structural position. Explicit `ui.WithID` is available for keyed identity. Reconciliation updates equal-ID/equal-type nodes in place, recursively creates/deletes subtrees, and emits move operations when child order changes. A counter click produces one `MutationUpdate` for the label.
+For unkeyed trees, the runtime preserves identity by matching type and structural position. `ui.WithID` marks explicit identity that survives reordering and also keeps event handlers attached to the logical node. Reconciliation updates equal-ID/equal-type nodes in place, recursively creates/deletes subtrees, and computes moves against the evolving child order so every emitted index is immediately applicable by native renderers. A counter click produces one `MutationUpdate` for the label.
 
 ## Threading and ownership
 

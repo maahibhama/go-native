@@ -56,3 +56,51 @@ func TestRuntimeStateChangeOnlyUpdatesText(t *testing.T) {
 		t.Fatalf("expected one text update, got %#v", got)
 	}
 }
+
+func TestStabilizeIDsPreservesExplicitIdentityAcrossReorder(t *testing.T) {
+	oldTree := ui.Column(
+		ui.WithID(ui.Text("a"), 100),
+		ui.WithID(ui.Text("b"), 200),
+	).Build()
+	newTree := ui.Column(
+		ui.WithID(ui.Text("b"), 200),
+		ui.WithID(ui.Text("a"), 100),
+	).Build()
+	stabilizeIDs(oldTree, newTree)
+	if newTree.ID != oldTree.ID {
+		t.Fatal("unkeyed root identity was not stabilized")
+	}
+	if newTree.Children[0].ID != 200 || newTree.Children[1].ID != 100 {
+		t.Fatalf("explicit IDs were replaced: %d %d", newTree.Children[0].ID, newTree.Children[1].ID)
+	}
+	batch := Reconcile(oldTree, newTree)
+	if len(batch.Mutations) != 1 || batch.Mutations[0].Type != MutationMove {
+		t.Fatalf("expected one native move, got %#v", batch.Mutations)
+	}
+}
+
+func TestKeyedButtonReorderPreservesHandlerIdentity(t *testing.T) {
+	r := &Runtime{events: NewEventRegistry()}
+	firstCalls, secondCalls := 0, 0
+	oldTree := ui.Column(
+		ui.WithID(ui.Button("first", func() { firstCalls++ }), 100),
+		ui.WithID(ui.Button("second", func() { secondCalls++ }), 200),
+	).Build()
+	r.bindHandlers(nil, oldTree)
+	firstHandler := oldTree.Children[0].Props.OnPress
+	secondHandler := oldTree.Children[1].Props.OnPress
+
+	nextTree := ui.Column(
+		ui.WithID(ui.Button("second", func() { secondCalls += 10 }), 200),
+		ui.WithID(ui.Button("first", func() { firstCalls += 10 }), 100),
+	).Build()
+	r.bindHandlers(oldTree, nextTree)
+	if nextTree.Children[0].Props.OnPress != secondHandler || nextTree.Children[1].Props.OnPress != firstHandler {
+		t.Fatalf("handlers followed position rather than identity: %#v", nextTree.Children)
+	}
+	r.events.Dispatch(nextTree.Children[0].Props.OnPress)
+	r.events.Dispatch(nextTree.Children[1].Props.OnPress)
+	if firstCalls != 10 || secondCalls != 10 {
+		t.Fatalf("wrong callbacks dispatched: first=%d second=%d", firstCalls, secondCalls)
+	}
+}

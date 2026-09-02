@@ -15,15 +15,9 @@ func Text(value string) *element { return newElement(NodeText, Props{Text: value
 // Button creates a native button. BindHandlers resolves its callback to a stable ID.
 func Button(label string, onPress func()) *element {
 	e := newElement(NodeButton, Props{Text: label})
-	buttonCallbacks.Store(e.node.ID, onPress)
+	e.node.Press = onPress
 	return e
 }
-
-var buttonCallbacks callbackStore
-
-// TakeButtonCallback returns the callback associated with a button node.
-// Runtime uses this during tree binding; applications normally do not call it.
-func TakeButtonCallback(id NodeID) func() { return buttonCallbacks.Load(id) }
 
 func (e *element) Padding(value float32) *element     { e.node.Props.Padding = value; return e }
 func (e *element) Gap(value float32) *element         { e.node.Props.Gap = value; return e }
