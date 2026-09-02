@@ -37,10 +37,12 @@ State is safe to read or update from goroutines. Rendering is serialized and rep
 
 Go owns nodes, state, and callbacks. Objective-C owns UIKit views and action targets. Delete mutations remove native views, and removed virtual subtrees release handler registry entries. The iOS renderer does not retain Go pointers.
 
+Android uses the same bytes without a second protocol: JNI copies the payload into a Java byte array, Java schedules it with `runOnUiThread`, and a `LongSparseArray<View>` retains native view identity. Go-created threads obtain a thread-local `JNIEnv` from the cached `JavaVM`, attach only when necessary, and detach before exit. The Java renderer retains no Go pointers.
+
 ## Layout scope
 
 Milestone 0 translates `Row` and `Column` to `UIStackView`, including padding, gap, alignment, width, and height. This is intentionally not CSS. The longer-term layout choice and its tradeoffs are recorded in [ADR 0002](adr/0002-native-layout-milestone-0.md).
 
 ## Deferred work
 
-Android, keyed-list APIs, native virtualized lists, navigation, text input, animation, gestures, hot reload, and production lifecycle handling are outside Milestone 0. Accessibility currently maps basic labels and button/label semantics to UIKit; the property model can grow without changing tree shape.
+Keyed-list APIs, native virtualized lists, navigation, text input, animation, gestures, hot reload, and production lifecycle handling remain deferred. Accessibility currently maps basic labels and button/label semantics to each native platform; the property model can grow without changing tree shape.
