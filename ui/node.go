@@ -15,6 +15,7 @@ const (
 	NodeButton
 	NodeRow
 	NodeColumn
+	NodeSafeArea
 )
 
 // HandlerID identifies an event callback without passing a Go pointer to native code.

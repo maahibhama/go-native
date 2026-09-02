@@ -8,13 +8,14 @@ import (
 	"io"
 )
 
-const protocolVersion uint16 = 1
+const protocolVersion uint16 = 2
 
 // MarshalBinary encodes a batch for one coarse-grained native call.
 func (b MutationBatch) MarshalBinary() ([]byte, error) {
 	var out bytes.Buffer
 	_ = binary.Write(&out, binary.LittleEndian, protocolVersion)
 	_ = binary.Write(&out, binary.LittleEndian, uint32(len(b.Mutations)))
+	_ = binary.Write(&out, binary.LittleEndian, b.Sequence)
 	for _, m := range b.Mutations {
 		out.WriteByte(byte(m.Type))
 		out.WriteByte(byte(m.NodeType))
@@ -53,7 +54,11 @@ func UnmarshalMutationBatch(data []byte) (MutationBatch, error) {
 	if binary.Read(r, binary.LittleEndian, &count) != nil {
 		return MutationBatch{}, errors.New("invalid mutation count")
 	}
-	b := MutationBatch{Mutations: make([]Mutation, 0, count)}
+	var sequence uint64
+	if binary.Read(r, binary.LittleEndian, &sequence) != nil {
+		return MutationBatch{}, errors.New("invalid batch sequence")
+	}
+	b := MutationBatch{Sequence: sequence, Mutations: make([]Mutation, 0, count)}
 	for range count {
 		var m Mutation
 		a, e := r.ReadByte()

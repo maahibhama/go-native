@@ -12,6 +12,10 @@ type recordingRenderer struct {
 	batches []MutationBatch
 }
 
+type rendererFunc func(MutationBatch) error
+
+func (f rendererFunc) Apply(batch MutationBatch) error { return f(batch) }
+
 func (r *recordingRenderer) Apply(b MutationBatch) error {
 	r.mu.Lock()
 	r.batches = append(r.batches, b)
@@ -102,5 +106,45 @@ func TestKeyedButtonReorderPreservesHandlerIdentity(t *testing.T) {
 	r.events.Dispatch(nextTree.Children[1].Props.OnPress)
 	if firstCalls != 10 || secondCalls != 10 {
 		t.Fatalf("wrong callbacks dispatched: first=%d second=%d", firstCalls, secondCalls)
+	}
+}
+
+func TestStopReleasesHandlersAndSuppressesRenders(t *testing.T) {
+	renderer := &recordingRenderer{}
+	r := New(func() ui.Component { return ui.Button("tap", func() {}) }, renderer)
+	if err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	handler := r.tree.Props.OnPress
+	r.mu.Unlock()
+	if handler == 0 || !r.events.Dispatch(handler) {
+		t.Fatal("expected a live handler before stop")
+	}
+	r.Stop()
+	if r.events.Dispatch(handler) {
+		t.Fatal("handler remained live after stop")
+	}
+	r.Schedule()
+	time.Sleep(10 * time.Millisecond)
+	renderer.mu.Lock()
+	defer renderer.mu.Unlock()
+	if len(renderer.batches) != 1 {
+		t.Fatalf("stop allowed another render: %d batches", len(renderer.batches))
+	}
+}
+
+func TestNativeTimingAcknowledgement(t *testing.T) {
+	var r *Runtime
+	r = New(func() ui.Component { return ui.Text("timed") }, rendererFunc(func(batch MutationBatch) error {
+		r.RecordNativeApply(batch.Sequence, 25*time.Microsecond)
+		return nil
+	}))
+	if err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	samples := r.TimingSamples()
+	if len(samples) != 1 || samples[0].Sequence == 0 || samples[0].MutationCount != 1 || samples[0].NativeApply != 25*time.Microsecond || samples[0].BridgeToApply <= 0 {
+		t.Fatalf("unexpected timing samples: %#v", samples)
 	}
 }

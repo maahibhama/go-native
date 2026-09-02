@@ -35,9 +35,9 @@ For unkeyed trees, the runtime preserves identity by matching type and structura
 
 State is safe to read or update from goroutines. Rendering is serialized and repeated state changes are coalesced while a render is pending. The iOS renderer copies the batch bytes synchronously, then applies the copy on the UIKit main queue. Native callbacks enter Go on the UIKit thread, resolve an integer handler, and schedule rendering; UIKit is never mutated directly from Go application goroutines.
 
-Go owns nodes, state, and callbacks. Objective-C owns UIKit views and action targets. Delete mutations remove native views, and removed virtual subtrees release handler registry entries. The iOS renderer does not retain Go pointers.
+Go owns nodes, state, and callbacks. Objective-C owns UIKit views and action targets. Delete mutations remove native views and node-keyed action targets; removed virtual subtrees release handler registry entries. When the view-controller owner is destroyed, its bridge stops the Go runtime before releasing the remaining native registries. The iOS renderer does not retain Go pointers.
 
-Android uses the same bytes without a second protocol: JNI copies the payload into a Java byte array, Java schedules it with `runOnUiThread`, and a `LongSparseArray<View>` retains native view identity. Go-created threads obtain a thread-local `JNIEnv` from the cached `JavaVM`, attach only when necessary, and detach before exit. The Java renderer retains no Go pointers.
+Android uses the same bytes without a second protocol: JNI copies the payload into a Java byte array, Java schedules it with `runOnUiThread`, and a `LongSparseArray<View>` retains native view identity. Go-created threads obtain a thread-local `JNIEnv` from the cached `JavaVM`, attach only when necessary, and detach before exit. Activity destruction stops the runtime, clears the view registry, and deletes the JNI global renderer reference under a mutex. The Java renderer retains no Go pointers.
 
 ## Layout scope
 

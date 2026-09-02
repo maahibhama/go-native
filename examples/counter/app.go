@@ -10,8 +10,10 @@ var count = ui.NewState(0)
 
 // App builds the counter's native UI tree.
 func App() ui.Component {
-	return ui.Column(
-		ui.Text(fmt.Sprintf("Count: %d", count.Get())).FontSize(28).Bold().AccessibilityLabel("Counter value"),
-		ui.Button("Increment", func() { count.Update(func(v int) int { return v + 1 }) }).AccessibilityLabel("Increment counter"),
-	).Padding(20).Gap(12).Align(ui.AlignCenter)
+	return ui.SafeArea(
+		ui.Column(
+			ui.TextFunc(func() string { return fmt.Sprintf("Count: %d", count.Get()) }).FontSize(28).Bold().AccessibilityLabel("Counter value"),
+			ui.Button("Increment", func() { count.Update(func(v int) int { return v + 1 }) }).AccessibilityLabel("Increment counter"),
+		).Padding(20).Gap(12).Align(ui.AlignCenter),
+	)
 }

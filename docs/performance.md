@@ -38,13 +38,22 @@ Environment: Apple M5 Pro, Darwin arm64, Go 1.26.5. Three samples per benchmark 
 
 These numbers are baselines, not user-facing performance claims. They identify two immediate optimization targets: unchanged reconciliation currently pays for full child maps, and the initial serializer performs many small `binary.Write` operations. Changes should be justified with before/after multi-sample results rather than intuition.
 
+## Native instrumentation
+
+Mutation protocol version 2 assigns every runtime batch a sequence number. The iOS renderer measures decode plus UIKit mutation application with `CLOCK_MONOTONIC_RAW`; Android measures Java decode plus View mutation application with `System.nanoTime`. Both acknowledge the sequence back to Go after UI-thread application. The runtime retains bounded per-batch timestamps and can report:
+
+- native decode/application duration;
+- bridge submission to native completion, including UI-queue delay;
+- button dispatch to native completion for event-triggered batches.
+
+`Runtime.TimingSamples` exposes completed samples for benchmark harnesses. These hooks do not log in the timed path.
+
 ## Native measurements still required
 
 The following need platform harnesses rather than approximation by Go benchmarks:
 
-- Objective-C mutation decoding and UIKit application on the main thread;
-- JNI copying, Java decoding, and Android View application on the UI thread;
-- native button event to completed native label update latency;
+- automated, repeated Objective-C/UIKit and JNI/Android View samples across batch sizes;
+- automated distributions for native button event to completed label update latency;
 - cold startup, resident memory, and packaged binary contribution;
 - frame pacing for larger update batches.
 

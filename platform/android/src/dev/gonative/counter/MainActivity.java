@@ -26,6 +26,7 @@ public final class MainActivity extends Activity {
     private static final int BUTTON = 3;
     private static final int ROW = 4;
     private static final int COLUMN = 5;
+    private static final int SAFE_AREA = 6;
 
     static { System.loadLibrary("gonative"); }
 
@@ -33,10 +34,18 @@ public final class MainActivity extends Activity {
 
     private native void nativeStart();
     private native void nativeDispatchEvent(long handler);
+    private native void nativeStop();
+    private native void nativeReportBatchApplied(long sequence, long nativeNanos);
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         nativeStart();
+    }
+
+    @Override protected void onDestroy() {
+        nativeStop();
+        views.clear();
+        super.onDestroy();
     }
 
     @SuppressWarnings("unused")
@@ -48,9 +57,11 @@ public final class MainActivity extends Activity {
     }
 
     private void applyOnUiThread(byte[] payload) {
+        long started = System.nanoTime();
         ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
-        if (Short.toUnsignedInt(in.getShort()) != 1) return;
+        if (Short.toUnsignedInt(in.getShort()) != 2) return;
         int count = in.getInt();
+        long sequence = in.getLong();
         for (int operation = 0; operation < count; operation++) {
             int mutation = Byte.toUnsignedInt(in.get());
             int kind = Byte.toUnsignedInt(in.get());
@@ -95,6 +106,7 @@ public final class MainActivity extends Activity {
             // Retained in the cross-platform protocol for renderer diagnostics.
             if (fromIndex == Integer.MIN_VALUE) throw new AssertionError();
         }
+        nativeReportBatchApplied(sequence, System.nanoTime() - started);
     }
 
     private View makeView(int kind) {
@@ -102,6 +114,7 @@ public final class MainActivity extends Activity {
         if (kind == BUTTON) return new Button(this);
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(kind == ROW ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        if (kind == SAFE_AREA) layout.setFitsSystemWindows(true);
         return layout;
     }
 

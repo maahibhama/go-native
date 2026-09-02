@@ -10,6 +10,7 @@ import "C"
 
 import (
 	"errors"
+	"time"
 	"unsafe"
 
 	"github.com/go-native/go-native/examples/counter"
@@ -45,6 +46,21 @@ func GoNativeAndroidStart() {
 func GoNativeAndroidDispatchEvent(handler C.uint64_t) {
 	if appRuntime != nil {
 		appRuntime.Dispatch(ui.HandlerID(handler))
+	}
+}
+
+//export GoNativeAndroidStop
+func GoNativeAndroidStop() {
+	if appRuntime != nil {
+		appRuntime.Stop()
+		appRuntime = nil
+	}
+}
+
+//export GoNativeAndroidReportBatchApplied
+func GoNativeAndroidReportBatchApplied(sequence C.uint64_t, nativeNanos C.uint64_t) {
+	if appRuntime != nil {
+		appRuntime.RecordNativeApply(uint64(sequence), time.Duration(nativeNanos))
 	}
 }
 

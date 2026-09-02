@@ -12,6 +12,7 @@ import (
 	"github.com/go-native/go-native/examples/counter"
 	gnruntime "github.com/go-native/go-native/runtime"
 	"github.com/go-native/go-native/ui"
+	"time"
 	"unsafe"
 )
 
@@ -43,6 +44,21 @@ func GoNativeStart() {
 func GoNativeDispatchEvent(handler C.uint64_t) {
 	if appRuntime != nil {
 		appRuntime.Dispatch(ui.HandlerID(handler))
+	}
+}
+
+//export GoNativeStop
+func GoNativeStop() {
+	if appRuntime != nil {
+		appRuntime.Stop()
+		appRuntime = nil
+	}
+}
+
+//export GoNativeReportBatchApplied
+func GoNativeReportBatchApplied(sequence C.uint64_t, nativeNanos C.uint64_t) {
+	if appRuntime != nil {
+		appRuntime.RecordNativeApply(uint64(sequence), time.Duration(nativeNanos))
 	}
 }
 

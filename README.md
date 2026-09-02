@@ -25,6 +25,8 @@ make benchmark
 
 Results and measurement boundaries are documented in [docs/performance.md](docs/performance.md). Native bridge/application timing is tracked separately from Go-side measurements.
 
+Implementation status and acceptance criteria are tracked in [docs/roadmap.md](docs/roadmap.md).
+
 ## CLI
 
 Run the narrow Milestone 0 CLI directly during development:
