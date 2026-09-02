@@ -216,3 +216,31 @@ func TestNativeTimingAcknowledgement(t *testing.T) {
 		t.Fatalf("unexpected timing samples: %#v", samples)
 	}
 }
+
+func TestContextRuntimeRebuildsForEnvironment(t *testing.T) {
+	renderer := &recordingRenderer{}
+	r := NewContext(func(ctx ui.BuildContext) ui.Component { return ui.Text(ctx.Environment.Locale) }, renderer, ui.DefaultEnvironment())
+	if err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	r.UpdateEnvironment(func(environment ui.Environment) ui.Environment { environment.Locale = "fr"; return environment })
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		renderer.mu.Lock()
+		count := len(renderer.batches)
+		renderer.mu.Unlock()
+		if count >= 2 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	renderer.mu.Lock()
+	defer renderer.mu.Unlock()
+	if len(renderer.batches) < 2 {
+		t.Fatalf("batches = %d", len(renderer.batches))
+	}
+	last := renderer.batches[len(renderer.batches)-1]
+	if len(last.Mutations) != 1 || last.Mutations[0].Props.Text != "fr" {
+		t.Fatalf("last batch = %#v", last)
+	}
+}

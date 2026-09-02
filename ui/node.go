@@ -92,6 +92,8 @@ type Node struct {
 	ExplicitID bool
 	Type       NodeType
 	Props      Props
+	Style      Style
+	Platform   PlatformStyle
 	Children   []*Node
 	// Press is Go-owned behavior. It never enters Props or crosses a native boundary.
 	Press func()
@@ -116,6 +118,9 @@ var nextNodeID atomic.Uint64
 
 func newElement(kind NodeType, props Props, children ...Component) *element {
 	n := &Node{ID: NodeID(nextNodeID.Add(1)), Type: kind, Props: props}
+	if kind == NodeRow {
+		n.Style.Layout.Direction = FlexRow
+	}
 	n.Children = make([]*Node, 0, len(children))
 	for _, child := range children {
 		if child != nil {

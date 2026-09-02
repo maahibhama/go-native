@@ -10,6 +10,10 @@ import (
 // App builds a declarative tree from current state.
 type App func() ui.Component
 
+// ContextApp is the production application contract. It receives immutable
+// environment and mounted-path context for every committed build.
+type ContextApp func(ui.BuildContext) ui.Component
+
 // Runtime owns tree identity, handlers, reconciliation, and render scheduling.
 type Runtime struct {
 	app         App
@@ -25,6 +29,8 @@ type Runtime struct {
 	samples     []TimingSample
 	eventAt     time.Time
 	diagnostics *Diagnostics
+	environment ui.Environment
+	contextApp  ContextApp
 }
 
 type pendingTiming struct {
@@ -37,7 +43,38 @@ const timingHistoryLimit uint64 = 1024
 
 // New creates an application runtime.
 func New(app App, renderer Renderer) *Runtime {
-	return &Runtime{app: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming), diagnostics: NewDiagnostics()}
+	return &Runtime{app: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming), diagnostics: NewDiagnostics(), environment: ui.DefaultEnvironment()}
+}
+
+// NewContext creates a runtime using the context-aware application contract.
+func NewContext(app ContextApp, renderer Renderer, environment ui.Environment) *Runtime {
+	return &Runtime{contextApp: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming), diagnostics: NewDiagnostics(), environment: environment}
+}
+
+// Environment returns the current immutable application environment snapshot.
+func (r *Runtime) Environment() ui.Environment {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.environment
+}
+
+// UpdateEnvironment replaces runtime context and schedules a render.
+func (r *Runtime) UpdateEnvironment(update func(ui.Environment) ui.Environment) {
+	if update == nil {
+		return
+	}
+	r.mu.Lock()
+	r.environment = update(r.environment)
+	stopped := r.stopped
+	r.mu.Unlock()
+	if !stopped {
+		r.Schedule()
+	}
+}
+
+// SetLifecycle updates the portable lifecycle state and schedules observers.
+func (r *Runtime) SetLifecycle(state ui.LifecycleState) {
+	r.UpdateEnvironment(func(environment ui.Environment) ui.Environment { environment.Lifecycle = state; return environment })
 }
 
 // Start renders the initial tree and installs this runtime as the state scheduler.
@@ -190,12 +227,18 @@ func (r *Runtime) render() error {
 		r.diagnostics.Record(LogEntry{Kind: LogRenderSkipped, Message: "runtime stopped"})
 		return nil
 	}
-	component := r.app()
+	var component ui.Component
+	context := ui.NewBuildContext(r.environment)
+	if r.contextApp != nil {
+		component = r.contextApp(context)
+	} else if r.app != nil {
+		component = r.app()
+	}
 	if component == nil {
 		r.diagnostics.Record(LogEntry{Kind: LogRenderSkipped, Message: "nil component"})
 		return nil
 	}
-	next := component.Build()
+	next := ui.BuildWithContext(component, context)
 	r.bindHandlers(r.tree, next)
 	stabilizeIDs(r.tree, next)
 	batch := Reconcile(r.tree, next)

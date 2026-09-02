@@ -2,6 +2,19 @@
 
 An item is complete only when it has tests, relevant documentation, successful iOS and Android builds, and device verification where native behavior is involved.
 
+## Production foundation (v0.2 in progress)
+
+- [x] Typed `Style`, `Theme`, semantic `Token[T]`, and platform-style contracts
+- [x] Environment, media-query, lifecycle, typed dependencies, and `BuildContext`
+- [x] Context-aware runtime applications with environment-driven rendering
+- [x] Protocol-v7 compatibility projection for existing component modifiers
+- [x] Deterministic headless mutation renderer
+- [x] Initial Go-owned constraint layout engine and intrinsic measurement interface
+- [ ] Mounted element tree and component-scoped hooks
+- [ ] Flex growth/shrink, wrapping, aspect ratio, grid, and RTL layout
+- [ ] Batched native intrinsic measurement and typed mutation protocol
+- [ ] Focus tree and lifecycle callbacks wired from both native hosts
+
 ## Foundation
 
 - [x] Typed virtual tree for View, Column, Row, Text, and Button

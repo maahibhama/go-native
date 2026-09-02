@@ -68,3 +68,13 @@ func TestAccessibilityModifiers(t *testing.T) {
 		t.Fatalf("unexpected accessibility props: %#v", n.Props)
 	}
 }
+
+func TestTypedStyleProjectsProtocolV7Fields(t *testing.T) {
+	n := Text("styled").Styled(Style{Layout: LayoutStyle{Width: Points(120), Height: Points(44), Padding: Insets(8), Gap: 6, Alignment: AlignCenter}, Text: TextStyle{FontSize: 18, FontWeight: 700}, Appearance: AppearanceStyle{Background: RGB(1, 2, 3), CornerRadius: 10}}).Build()
+	if n.Props.Width != 120 || n.Props.Height != 44 || n.Props.Padding != 8 || n.Props.Gap != 6 || n.Props.Alignment != AlignCenter || n.Props.FontSize != 18 || !n.Props.Bold {
+		t.Fatalf("legacy projection = %#v", n.Props)
+	}
+	if n.Style.Appearance.Background != RGB(1, 2, 3) || n.Style.Appearance.CornerRadius != 10 {
+		t.Fatalf("typed style lost: %#v", n.Style)
+	}
+}
