@@ -91,6 +91,14 @@ If multiple devices are attached, select one explicitly:
 GONATIVE_ANDROID_SERIAL=emulator-5554 ./scripts/run-android.sh
 ```
 
+The development signing key is generated once under `.gonative/` and reused across clean builds. If upgrading from an older checkout that regenerated its key on every build, Android will reject the first update. Recover explicitly with:
+
+```bash
+GONATIVE_ANDROID_REINSTALL=1 go run ./cmd/gonative run android
+```
+
+This one-time recovery uninstalls the existing counter package and therefore deletes that package's local development data.
+
 The Java host uses `TextView`, `Button`, and `LinearLayout`. JNI carries one binary mutation batch per render and only integer handler IDs on the callback path.
 
 ## Repository map

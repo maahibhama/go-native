@@ -6,6 +6,7 @@ import android.graphics.PixelFormat;
 import android.graphics.drawable.Drawable;
 import android.widget.LinearLayout;
 
+@SuppressWarnings("deprecation")
 final class GapDrawable extends Drawable {
     private final int size;
     private final int orientation;
