@@ -10,9 +10,9 @@ import "C"
 import (
 	"errors"
 	"fmt"
-	"my-project"
 	gnruntime "github.com/go-native/go-native/runtime"
 	"github.com/go-native/go-native/ui"
+	"my-project"
 	"time"
 	"unsafe"
 )

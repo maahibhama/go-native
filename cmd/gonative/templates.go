@@ -466,6 +466,7 @@ typedef NS_ENUM(uint8_t, GNMutation) { GNCreate=1, GNDelete, GNUpdate, GNInsert,
 typedef NS_ENUM(uint8_t, GNNode) { GNView=1, GNText, GNButton, GNRow, GNColumn, GNSafeArea, GNTextInput, GNSwitch, GNProgressIndicator, GNImage, GNScrollView };
 
 @interface GNSafeAreaView : UIView
+@property(nonatomic) uint8_t gnAlignment;
 @end
 @implementation GNSafeAreaView
 @end
@@ -555,23 +556,76 @@ static void GNConfigureInteractions(uint64_t nodeID, UIView *view, NSData *paylo
 
 static void GNStyle(uint64_t nodeID, UIView *view, GNNode kind, NSString *text, float width, float height, float padding, float gap, uint8_t alignment, float fontSize, BOOL bold, uint64_t handler, uint64_t changeHandler, uint64_t toggleHandler, BOOL checked, float progress, NSString *accessibility, NSString *hint, uint8_t role, BOOL focused, BOOL scalesText, NSString *imageSource, uint8_t imageMode, BOOL horizontal, NSData *interactions, BOOL animate) {
     if ([view isKindOfClass:UILabel.class]) { UILabel*l=(UILabel*)view;l.text=text;UIFont*base=bold?[UIFont boldSystemFontOfSize:fontSize>0?fontSize:17]:[UIFont systemFontOfSize:fontSize>0?fontSize:17];l.font=scalesText?[[UIFontMetrics defaultMetrics] scaledFontForFont:base]:base;l.adjustsFontForContentSizeCategory=scalesText; }
-    if ([view isKindOfClass:UIButton.class]) { [(UIButton*)view setTitle:text forState:UIControlStateNormal]; NSNumber*actionKey=@(nodeID);GNAction*a=GNActions[actionKey];if(!a&&handler){a=[GNAction new];GNActions[actionKey]=a;[(UIButton*)view addTarget:a action:@selector(invoke) forControlEvents:UIControlEventTouchUpInside];}a.handler=handler; }
-    if ([view isKindOfClass:UITextField.class]) { UITextField*f=(UITextField*)view;if(![f.text isEqualToString:text])f.text=text;NSNumber*actionKey=@(nodeID);GNAction*a=GNActions[actionKey];if(!a&&changeHandler){a=[GNAction new];GNActions[actionKey]=a;[f addTarget:a action:@selector(change:) forControlEvents:UIControlEventEditingChanged];}a.handler=changeHandler; }
+    if ([view isKindOfClass:UIButton.class]) {
+        UIButton*b=(UIButton*)view;
+        UIFont*btnFont=bold?[UIFont boldSystemFontOfSize:fontSize>0?fontSize:16]:[UIFont systemFontOfSize:fontSize>0?fontSize:16];
+        if (@available(iOS 15.0, *)) {
+            UIButtonConfiguration *cfg = b.configuration ?: [UIButtonConfiguration filledButtonConfiguration];
+            cfg.title = text;
+            cfg.baseBackgroundColor = [UIColor systemBlueColor];
+            cfg.baseForegroundColor = [UIColor whiteColor];
+            cfg.cornerStyle = UIButtonConfigurationCornerStyleMedium;
+            b.configuration = cfg;
+        } else {
+            [b setTitle:text forState:UIControlStateNormal];
+            b.titleLabel.font = btnFont;
+            b.backgroundColor = [UIColor systemBlueColor];
+            [b setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+            b.layer.cornerRadius = 8.0;
+            b.clipsToBounds = YES;
+        }
+        NSNumber*actionKey=@(nodeID);GNAction*a=GNActions[actionKey];if(!a&&handler){a=[GNAction new];GNActions[actionKey]=a;[b addTarget:a action:@selector(invoke) forControlEvents:UIControlEventTouchUpInside];}a.handler=handler;
+    }
+    if ([view isKindOfClass:UITextField.class]) {
+        UITextField*f=(UITextField*)view;
+        if(![f.text isEqualToString:text]) f.text=text;
+        if(hint.length) f.placeholder = hint;
+        f.font = bold?[UIFont boldSystemFontOfSize:fontSize>0?fontSize:16]:[UIFont systemFontOfSize:fontSize>0?fontSize:16];
+        f.borderStyle = UITextBorderStyleRoundedRect;
+        f.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        f.autocorrectionType = UITextAutocorrectionTypeNo;
+        NSNumber*actionKey=@(nodeID);GNAction*a=GNActions[actionKey];if(!a&&changeHandler){a=[GNAction new];GNActions[actionKey]=a;[f addTarget:a action:@selector(change:) forControlEvents:UIControlEventEditingChanged];}a.handler=changeHandler;
+    }
     if ([view isKindOfClass:UISwitch.class]) { UISwitch*s=(UISwitch*)view;[s setOn:checked animated:NO];NSNumber*actionKey=@(nodeID);GNAction*a=GNActions[actionKey];if(!a&&toggleHandler){a=[GNAction new];GNActions[actionKey]=a;[s addTarget:a action:@selector(toggle:) forControlEvents:UIControlEventValueChanged];}a.handler=toggleHandler; }
     if ([view isKindOfClass:UIProgressView.class]) { [(UIProgressView*)view setProgress:progress animated:NO]; }
-    if ([view isKindOfClass:UIImageView.class]) { UIImageView*i=(UIImageView*)view;i.image=[UIImage imageNamed:imageSource];i.contentMode=imageMode==1?UIViewContentModeScaleAspectFill:imageMode==2?UIViewContentModeCenter:UIViewContentModeScaleAspectFit;i.clipsToBounds=YES; }
+    if ([view isKindOfClass:UIImageView.class]) {
+        UIImageView*i=(UIImageView*)view;
+        UIImage *img = [UIImage imageNamed:imageSource];
+        if(!img && [imageSource isEqualToString:@"app_logo"]) {
+            img = [UIImage systemImageNamed:@"lock.shield.fill"];
+            i.tintColor = UIColor.systemBlueColor;
+        } else if(!img && [imageSource isEqualToString:@"avatar"]) {
+            img = [UIImage systemImageNamed:@"person.crop.circle.fill"];
+            i.tintColor = UIColor.systemBlueColor;
+        } else if(!img && imageSource.length) {
+            img = [UIImage systemImageNamed:imageSource];
+        }
+        i.image=img;
+        i.contentMode=imageMode==1?UIViewContentModeScaleAspectFill:imageMode==2?UIViewContentModeCenter:UIViewContentModeScaleAspectFit;
+        i.clipsToBounds=YES;
+    }
     if ([view isKindOfClass:UIStackView.class]) { UIStackView*s=(UIStackView*)view;s.spacing=gap;s.layoutMarginsRelativeArrangement=YES;s.directionalLayoutMargins=NSDirectionalEdgeInsetsMake(padding,padding,padding,padding);s.alignment=alignment==1?UIStackViewAlignmentCenter:alignment==2?UIStackViewAlignmentTrailing:UIStackViewAlignmentLeading; }
+    if ([view isKindOfClass:GNSafeAreaView.class]) { ((GNSafeAreaView *)view).gnAlignment=alignment; }
     if(width>0)[view.widthAnchor constraintEqualToConstant:width].active=YES;if(height>0)[view.heightAnchor constraintEqualToConstant:height].active=YES;
     view.isAccessibilityElement=(kind==GNText||kind==GNButton||kind==GNTextInput||kind==GNSwitch||kind==GNProgressIndicator||role!=0);view.accessibilityLabel=accessibility.length?accessibility:text;view.accessibilityHint=hint;UIAccessibilityTraits traits=UIAccessibilityTraitNone;if(role==2||kind==GNButton)traits|=UIAccessibilityTraitButton;if(role==3)traits|=UIAccessibilityTraitHeader;if(role==4)traits|=UIAccessibilityTraitImage;view.accessibilityTraits=traits;if(focused)UIAccessibilityPostNotification(UIAccessibilityScreenChangedNotification,view);
     GNConfigureInteractions(nodeID,view,interactions,animate);
 }
 
-static UIView *GNMake(GNNode kind){UIView*v;if(kind==GNText){UILabel*l=[UILabel new];l.numberOfLines=0;v=l;}else if(kind==GNButton){UIButton*b=[UIButton buttonWithType:UIButtonTypeSystem];v=b;}else if(kind==GNTextInput){UITextField*f=[UITextField new];f.borderStyle=UITextBorderStyleRoundedRect;v=f;}else if(kind==GNSwitch){v=[UISwitch new];}else if(kind==GNProgressIndicator){v=[[UIProgressView alloc]initWithProgressViewStyle:UIProgressViewStyleDefault];}else if(kind==GNImage){v=[UIImageView new];}else if(kind==GNScrollView){v=[UIScrollView new];}else if(kind==GNRow||kind==GNColumn){UIStackView*s=[UIStackView new];s.axis=kind==GNRow?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;v=s;}else if(kind==GNSafeArea){v=[GNSafeAreaView new];}else{v=[UIView new];}v.translatesAutoresizingMaskIntoConstraints=NO;return v;}
+static UIView *GNMake(GNNode kind){UIView*v;if(kind==GNText){UILabel*l=[UILabel new];l.numberOfLines=0;l.textColor=UIColor.labelColor;v=l;}else if(kind==GNButton){UIButton*b=[UIButton buttonWithType:UIButtonTypeSystem];v=b;}else if(kind==GNTextInput){UITextField*f=[UITextField new];f.borderStyle=UITextBorderStyleRoundedRect;v=f;}else if(kind==GNSwitch){v=[UISwitch new];}else if(kind==GNProgressIndicator){v=[[UIProgressView alloc]initWithProgressViewStyle:UIProgressViewStyleDefault];}else if(kind==GNImage){v=[UIImageView new];}else if(kind==GNScrollView){v=[UIScrollView new];}else if(kind==GNRow||kind==GNColumn){UIStackView*s=[UIStackView new];s.axis=kind==GNRow?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;v=s;}else if(kind==GNSafeArea){v=[GNSafeAreaView new];v.backgroundColor=UIColor.systemBackgroundColor;}else{v=[UIView new];v.backgroundColor=UIColor.systemBackgroundColor;}v.translatesAutoresizingMaskIntoConstraints=NO;return v;}
+
+static void GNConstrainSafeAreaChild(GNSafeAreaView *parent, UIView *view) {
+    UILayoutGuide *guide=parent.safeAreaLayoutGuide;
+    NSMutableArray<NSLayoutConstraint *> *constraints=[NSMutableArray arrayWithArray:@[[view.leadingAnchor constraintGreaterThanOrEqualToAnchor:guide.leadingAnchor],[view.trailingAnchor constraintLessThanOrEqualToAnchor:guide.trailingAnchor],[view.topAnchor constraintGreaterThanOrEqualToAnchor:guide.topAnchor],[view.bottomAnchor constraintLessThanOrEqualToAnchor:guide.bottomAnchor]]];
+    if(parent.gnAlignment==1){[constraints addObject:[view.centerXAnchor constraintEqualToAnchor:guide.centerXAnchor]];[constraints addObject:[view.centerYAnchor constraintEqualToAnchor:guide.centerYAnchor]];}
+    else if(parent.gnAlignment==2){[constraints addObject:[view.trailingAnchor constraintEqualToAnchor:guide.trailingAnchor]];[constraints addObject:[view.bottomAnchor constraintEqualToAnchor:guide.bottomAnchor]];}
+    else{[constraints addObject:[view.leadingAnchor constraintEqualToAnchor:guide.leadingAnchor]];[constraints addObject:[view.topAnchor constraintEqualToAnchor:guide.topAnchor]];}
+    [NSLayoutConstraint activateConstraints:constraints];
+}
 
 static void GNApply(NSData *data){uint64_t started=GNNowNanos();GNReader r={(const uint8_t*)data.bytes,(const uint8_t*)data.bytes+data.length};if(u16(&r)!=7)return;uint32_t count=u32(&r);uint64_t sequence=u64(&r);for(uint32_t op=0;op<count;op++){GNMutation mutation=(GNMutation)u8(&r);GNNode kind=(GNNode)u8(&r);uint64_t nodeID=u64(&r),parentID=u64(&r);int32_t index=i32(&r),from=i32(&r);float width=f32(&r),height=f32(&r),padding=f32(&r),gap=f32(&r);uint8_t alignment=u8(&r);BOOL bold=u8(&r);float fontSize=f32(&r);uint64_t handler=u64(&r),changeHandler=u64(&r),toggleHandler=u64(&r);BOOL checked=u8(&r);float progress=f32(&r);NSString*text=str(&r);NSString*accessibility=str(&r);NSString*hint=str(&r);uint8_t role=u8(&r);BOOL focused=u8(&r);BOOL scalesText=u8(&r);NSString*imageSource=str(&r);uint8_t imageMode=u8(&r);BOOL horizontal=u8(&r);uint32_t interactionLength=u32(&r);NSData *interactions;if(r.p+interactionLength<=r.end){interactions=[NSData dataWithBytes:r.p length:interactionLength];r.p+=interactionLength;}else{r.p=r.end;interactions=[NSData data];}NSNumber*key=@(nodeID);UIView*view=GNViews[key];
-    if(mutation==GNCreate){view=GNMake(kind);GNViews[key]=view;GNStyle(nodeID,view,kind,text,width,height,padding,gap,alignment,fontSize,bold,handler,changeHandler,toggleHandler,checked,progress,accessibility,hint,role,focused,scalesText,imageSource,imageMode,horizontal,interactions,NO);if(!GNRoot.view.subviews.count){[GNRoot.view addSubview:view];[NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.leadingAnchor],[view.trailingAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.trailingAnchor],[view.topAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.topAnchor]]];}}
+    if(mutation==GNCreate){view=GNMake(kind);GNViews[key]=view;GNStyle(nodeID,view,kind,text,width,height,padding,gap,alignment,fontSize,bold,handler,changeHandler,toggleHandler,checked,progress,accessibility,hint,role,focused,scalesText,imageSource,imageMode,horizontal,interactions,NO);if(!GNRoot.view.subviews.count){view.backgroundColor=UIColor.systemBackgroundColor;[GNRoot.view addSubview:view];[NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.leadingAnchor],[view.trailingAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.trailingAnchor],[view.topAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.topAnchor],[view.bottomAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.bottomAnchor]]];}}
     else if(mutation==GNUpdate){GNStyle(nodeID,view,kind,text,width,height,padding,gap,alignment,fontSize,bold,handler,changeHandler,toggleHandler,checked,progress,accessibility,hint,role,focused,scalesText,imageSource,imageMode,horizontal,interactions,YES);}
-    else if(mutation==GNInsert){UIView*parent=GNViews[@(parentID)];if([parent isKindOfClass:UIStackView.class]){UIStackView*s=(UIStackView*)parent;[s insertArrangedSubview:view atIndex:MIN((NSUInteger)MAX(index,0),s.arrangedSubviews.count)];}else{[parent insertSubview:view atIndex:MIN((NSUInteger)MAX(index,0),parent.subviews.count)];UILayoutGuide*guide=[parent isKindOfClass:GNSafeAreaView.class]?parent.safeAreaLayoutGuide:nil;if([parent isKindOfClass:UIScrollView.class]){UIScrollView*s=(UIScrollView*)parent;[NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:s.contentLayoutGuide.leadingAnchor],[view.trailingAnchor constraintEqualToAnchor:s.contentLayoutGuide.trailingAnchor],[view.topAnchor constraintEqualToAnchor:s.contentLayoutGuide.topAnchor],[view.bottomAnchor constraintEqualToAnchor:s.contentLayoutGuide.bottomAnchor]]];}else if(guide){[NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:guide.leadingAnchor],[view.trailingAnchor constraintEqualToAnchor:guide.trailingAnchor],[view.topAnchor constraintEqualToAnchor:guide.topAnchor],[view.bottomAnchor constraintLessThanOrEqualToAnchor:guide.bottomAnchor]]];}}}
+    else if(mutation==GNInsert){UIView*parent=GNViews[@(parentID)];if([parent isKindOfClass:UIStackView.class]){UIStackView*s=(UIStackView*)parent;[s insertArrangedSubview:view atIndex:MIN((NSUInteger)MAX(index,0),s.arrangedSubviews.count)];}else{[parent insertSubview:view atIndex:MIN((NSUInteger)MAX(index,0),parent.subviews.count)];GNSafeAreaView*safe=[parent isKindOfClass:GNSafeAreaView.class]?(GNSafeAreaView*)parent:nil;if([parent isKindOfClass:UIScrollView.class]){UIScrollView*s=(UIScrollView*)parent;[NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:s.contentLayoutGuide.leadingAnchor],[view.trailingAnchor constraintEqualToAnchor:s.contentLayoutGuide.trailingAnchor],[view.topAnchor constraintEqualToAnchor:s.contentLayoutGuide.topAnchor],[view.bottomAnchor constraintEqualToAnchor:s.contentLayoutGuide.bottomAnchor],[view.widthAnchor constraintEqualToAnchor:s.frameLayoutGuide.widthAnchor]]];}else if(safe){GNConstrainSafeAreaChild(safe,view);}}}
     else if(mutation==GNRemove){[view removeFromSuperview];}
     else if(mutation==GNMove){UIView*parent=GNViews[@(parentID)];if([parent isKindOfClass:UIStackView.class]){UIStackView*s=(UIStackView*)parent;[s removeArrangedSubview:view];[s insertArrangedSubview:view atIndex:MIN((NSUInteger)MAX(index,0),s.arrangedSubviews.count)];}}
     else if(mutation==GNDelete){[view removeFromSuperview];[GNViews removeObjectForKey:key];[GNActions removeObjectForKey:key];[GNGestureActions removeObjectForKey:key];}
@@ -631,6 +685,8 @@ int main(int argc, char * argv[]) {
     <true/>
     <key>UILaunchScreen</key>
     <dict/>
+    <key>UIUserInterfaceStyle</key>
+    <string>Light</string>
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
@@ -837,7 +893,7 @@ SDK=${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}
 NDK_VERSION=${GONATIVE_NDK_VERSION:-28.2.13676358}
 NDK="$SDK/ndk/$NDK_VERSION"
 if [ ! -d "$NDK" ]; then
-    for d in "$SDK/ndk/"*; do
+    for d in "$SDK/ndk/"* "$SDK/ndk-bundle"; do
         if [ -d "$d" ]; then NDK="$d"; break; fi
     done
 fi
@@ -859,7 +915,12 @@ for abi in $ABIS; do
         *) continue ;;
     esac
     if [ ! -x "$TOOLCHAIN/bin/$compiler" ]; then
+        if [ -f "$BUILD/lib/$abi/libgonative.so" ]; then
+            echo "Using existing pre-built $BUILD/lib/$abi/libgonative.so"
+            continue
+        fi
         echo "Missing Android NDK compiler: $TOOLCHAIN/bin/$compiler" >&2
+        echo "Please set ANDROID_NDK_ROOT or install NDK via Android Studio SDK Manager." >&2
         exit 1
     fi
     mkdir -p "$LIB_BUILD/$abi"
@@ -897,6 +958,10 @@ trap - EXIT INT TERM
     <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">#0066CC</item>
+        <item name="android:windowBackground">#FFFFFF</item>
+        <item name="android:textColor">#000000</item>
+        <item name="android:textColorPrimary">#000000</item>
+        <item name="android:editTextColor">#000000</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">#FFFFFF</item>
         <item name="android:statusBarColor">#FFFFFF</item>
@@ -972,6 +1037,7 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.WeakHashMap;
 
 public final class MainActivity extends Activity {
     private static final int CREATE = 1;
@@ -995,6 +1061,7 @@ public final class MainActivity extends Activity {
 
     private final LongSparseArray<View> views = new LongSparseArray<>();
     private final LongSparseArray<GestureBinding> gestureBindings = new LongSparseArray<>();
+    private final WeakHashMap<EditText, TextWatcher> textWatchers = new WeakHashMap<>();
 
     private native void nativeStart();
     private native void nativeDispatchEvent(long handler);
@@ -1006,6 +1073,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        getWindow().getDecorView().setBackgroundColor(android.graphics.Color.WHITE);
         nativeStart();
     }
 
@@ -1013,6 +1081,7 @@ public final class MainActivity extends Activity {
         nativeStop();
         for (int i = 0; i < gestureBindings.size(); i++) gestureBindings.valueAt(i).dispose();
         gestureBindings.clear();
+        textWatchers.clear();
         for (int i = 0; i < views.size(); i++) views.valueAt(i).animate().cancel();
         views.clear();
         super.onDestroy();
@@ -1074,7 +1143,11 @@ public final class MainActivity extends Activity {
                     views.put(nodeID, view);
                     style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
                     applyInteractions(nodeID, view, interactions);
-                    if (views.size() == 1) setContentView(view);
+                    if (views.size() == 1) {
+                        view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                        view.setBackgroundColor(android.graphics.Color.WHITE);
+                        setContentView(view);
+                    }
                 } else if (mutation == UPDATE) {
                     if (view != null) {
                         style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
@@ -1085,7 +1158,13 @@ public final class MainActivity extends Activity {
                     if (parentView instanceof ViewGroup && view != null) {
                         ViewGroup parent = (ViewGroup) parentView;
                         detach(view);
-                        parent.addView(view, Math.min(Math.max(index, 0), parent.getChildCount()));
+                        if (parent instanceof ScrollView || parent instanceof HorizontalScrollView) {
+                            parent.removeAllViews();
+                            ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                            parent.addView(view, lp);
+                        } else {
+                            parent.addView(view, Math.min(Math.max(index, 0), parent.getChildCount()));
+                        }
                     }
                 } else if (mutation == REMOVE) {
                     detach(view);
@@ -1094,10 +1173,17 @@ public final class MainActivity extends Activity {
                     if (parentView instanceof ViewGroup && view != null) {
                         ViewGroup parent = (ViewGroup) parentView;
                         detach(view);
-                        parent.addView(view, Math.min(Math.max(index, 0), parent.getChildCount()));
+                        if (parent instanceof ScrollView || parent instanceof HorizontalScrollView) {
+                            parent.removeAllViews();
+                            ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                            parent.addView(view, lp);
+                        } else {
+                            parent.addView(view, Math.min(Math.max(index, 0), parent.getChildCount()));
+                        }
                     }
                 } else if (mutation == DELETE) {
                     detach(view);
+                    if (view instanceof EditText) textWatchers.remove((EditText) view);
                     GestureBinding binding = gestureBindings.get(nodeID);
                     if (binding != null) binding.dispose();
                     gestureBindings.remove(nodeID);
@@ -1113,13 +1199,27 @@ public final class MainActivity extends Activity {
     }
 
     private View makeView(int kind, boolean horizontal) {
-        if (kind == TEXT) return new TextView(this);
+        if (kind == TEXT) {
+            TextView tv = new TextView(this);
+            tv.setTextColor(android.graphics.Color.BLACK);
+            return tv;
+        }
         if (kind == BUTTON) return new Button(this);
         if (kind == TEXT_INPUT) return new EditText(this);
         if (kind == SWITCH) return new Switch(this);
         if (kind == PROGRESS_INDICATOR) { ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); bar.setMax(10000); return bar; }
         if (kind == IMAGE) return new ImageView(this);
-        if (kind == SCROLL_VIEW) return horizontal ? new HorizontalScrollView(this) : new ScrollView(this);
+        if (kind == SCROLL_VIEW) {
+            if (horizontal) {
+                HorizontalScrollView hsv = new HorizontalScrollView(this);
+                hsv.setFillViewport(true);
+                return hsv;
+            } else {
+                ScrollView sv = new ScrollView(this);
+                sv.setFillViewport(true);
+                return sv;
+            }
+        }
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(kind == ROW ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         if (kind == SAFE_AREA) layout.setFitsSystemWindows(true);
@@ -1134,12 +1234,26 @@ public final class MainActivity extends Activity {
             textView.setText(text);
             if (fontSize > 0) textView.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize);
             textView.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
+            textView.setIncludeFontPadding(false);
+            textView.setTextColor(android.graphics.Color.parseColor("#111111"));
         }
         if (kind == BUTTON && view instanceof Button) {
             Button btn = (Button) view;
             btn.setText(text);
             if (fontSize > 0) btn.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize);
             btn.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
+            btn.setAllCaps(false);
+            btn.setIncludeFontPadding(false);
+            btn.setGravity(Gravity.CENTER);
+            btn.setMinHeight(0);
+            btn.setMinimumHeight(0);
+            btn.setElevation(0);
+            android.graphics.drawable.GradientDrawable btnBg = new android.graphics.drawable.GradientDrawable();
+            btnBg.setColor(android.graphics.Color.parseColor("#007AFF"));
+            btnBg.setCornerRadius(dp(8));
+            btn.setBackground(btnBg);
+            btn.setTextColor(android.graphics.Color.WHITE);
+            btn.setPadding(dp(16), 0, dp(16), 0);
             final long eventHandler = handler;
             if (eventHandler != 0) {
                 view.setOnClickListener(new View.OnClickListener() {
@@ -1151,10 +1265,24 @@ public final class MainActivity extends Activity {
         }
         if (view instanceof EditText) {
             EditText field = (EditText) view;
-            Object existing = field.getTag(android.R.id.custom);
-            if (existing instanceof TextWatcher) field.removeTextChangedListener((TextWatcher) existing);
+            field.setSingleLine(true);
+            field.setGravity(Gravity.CENTER_VERTICAL);
+            field.setIncludeFontPadding(false);
+            field.setMinHeight(dp(44));
+            if (hint != null && !hint.isEmpty()) field.setHint(hint);
+            field.setTextColor(android.graphics.Color.BLACK);
+            field.setHintTextColor(android.graphics.Color.parseColor("#8E8E93"));
+            android.graphics.drawable.GradientDrawable fieldBg = new android.graphics.drawable.GradientDrawable();
+            fieldBg.setColor(android.graphics.Color.parseColor("#FAFAFC"));
+            fieldBg.setCornerRadius(dp(8));
+            fieldBg.setStroke(dp(1), android.graphics.Color.parseColor("#D1D1D6"));
+            field.setBackground(fieldBg);
+            int padX = dp(12), padY = dp(8);
+            field.setPadding(padX, padY, padX, padY);
+            TextWatcher existing = textWatchers.get(field);
+            if (existing != null) field.removeTextChangedListener(existing);
             if (text != null && !field.getText().toString().equals(text)) { field.setText(text); field.setSelection(field.length()); }
-            if (fontSize > 0) field.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize);
+            field.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize > 0 ? fontSize : 16);
             field.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
             final long eventHandler = changeHandler;
             TextWatcher watcher = new TextWatcher() {
@@ -1162,7 +1290,7 @@ public final class MainActivity extends Activity {
                 public void onTextChanged(CharSequence s, int start, int before, int count) { if (eventHandler != 0) nativeDispatchValueEvent(eventHandler, s.toString()); }
                 public void afterTextChanged(Editable s) {}
             };
-            field.addTextChangedListener(watcher); field.setTag(android.R.id.custom, watcher);
+            field.addTextChangedListener(watcher); textWatchers.put(field, watcher);
         }
         if (view instanceof Switch) {
             Switch toggle = (Switch) view;
@@ -1180,15 +1308,40 @@ public final class MainActivity extends Activity {
             if (imageSource != null && !imageSource.isEmpty()) {
                 int resource = getResources().getIdentifier(imageSource, "drawable", getPackageName());
                 if (resource == 0) resource = getResources().getIdentifier(imageSource, "mipmap", getPackageName());
-                if (resource != 0) image.setImageResource(resource);
-                else image.setImageDrawable(null);
+                if (resource != 0) {
+                    image.setImageResource(resource);
+                } else if ("app_logo".equals(imageSource)) {
+                    android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+                    gd.setColor(android.graphics.Color.parseColor("#007AFF"));
+                    gd.setCornerRadius(dp(16));
+                    image.setBackground(gd);
+                    image.setImageResource(android.R.drawable.ic_lock_lock);
+                    image.setColorFilter(android.graphics.Color.WHITE);
+                    int pad = dp(12);
+                    image.setPadding(pad, pad, pad, pad);
+                } else if ("avatar".equals(imageSource)) {
+                    android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+                    gd.setColor(android.graphics.Color.parseColor("#007AFF"));
+                    gd.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                    image.setBackground(gd);
+                    image.setImageResource(android.R.drawable.ic_menu_myplaces);
+                    image.setColorFilter(android.graphics.Color.WHITE);
+                    int pad = dp(10);
+                    image.setPadding(pad, pad, pad, pad);
+                } else {
+                    image.setImageDrawable(null);
+                }
             } else {
                 image.setImageDrawable(null);
             }
             image.setScaleType(imageMode == 1 ? ImageView.ScaleType.CENTER_CROP : imageMode == 2 ? ImageView.ScaleType.CENTER : ImageView.ScaleType.FIT_CENTER);
         }
         int paddingPx = dp(padding);
-        view.setPadding(paddingPx, paddingPx, paddingPx, paddingPx);
+        if (view instanceof EditText) {
+            view.setPadding(dp(12) + paddingPx, dp(8) + paddingPx, dp(12) + paddingPx, dp(8) + paddingPx);
+        } else {
+            view.setPadding(paddingPx, paddingPx, paddingPx, paddingPx);
+        }
         view.setContentDescription(accessibility.isEmpty() ? text : accessibility);
         view.setAccessibilityDelegate(new View.AccessibilityDelegate() {
             @Override public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {

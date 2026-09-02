@@ -1,48 +1,91 @@
-# Go Native — Agent Context & Guidelines
+# Go Native — Agent Context
 
-## Overview
-Go Native is a declarative Go UI runtime that renders platform-native controls on iOS (UIKit) and Android (Android Views).
-- **Zero Web/Canvas Overhead**: No WebView, JavaScript, React Native bridge JSON, Flutter, or Skia canvas.
-- **Binary Mutation Batch**: State changes produce virtual UI trees reconciled into a versioned, little-endian binary batch (`runtime.MutationBatch`) sent across the native boundary in **one coarse call per render pass**.
-- **Pointer-Free Handler Boundary**: Native event listeners hold only 64-bit integer `HandlerID`s. No Go pointers or objects cross cgo/JNI.
+## Mission
 
----
+Go Native is a declarative Go UI runtime that renders real UIKit controls on iOS and Android Views on Android. Preserve these architectural boundaries:
 
-## Repository Map
-- [`ui/`](./ui): Platform-independent declarative primitives (`View`, `Column`, `Row`, `Text`, `SafeArea`, `Button`, `TextInput`, `Switch`, `ProgressIndicator`, `Image`, `ScrollView`), typed `Props`, reactive `State[T]`, gesture/animation intents, and navigation/modal abstractions.
-- [`runtime/`](./runtime): Reconciler (`Reconcile`), identity stabilization (`stabilizeIDs`), binary serialization (`MarshalBinary`/`UnmarshalMutationBatch`), thread-safe `EventRegistry`, diagnostics, and performance timing instrumentation.
-- [`runtime/inspector/`](./runtime/inspector): Loopback HTTP diagnostic server (`GET /v1/tree`, `GET /v1/logs`).
-- [`platform/ios/`](./platform/ios): Objective-C UIKit host & renderer (`GoNativeRenderer.m`/`.h`, `main.m`).
-- [`platform/android/`](./platform/android): Java Views host & renderer (`MainActivity.java`, `GapDrawable.java`, Gradle build configuration).
-- [`cmd/gonative/`](./cmd/gonative): Developer CLI (`init`, `doctor`, `build`, `run`, `benchmark native`).
-- [`examples/counter/`](./examples/counter): Demo app and cgo/JNI bridge entrypoints (`bridge/main.go`, `androidbridge/main.go`, `androidbridge/jni.c`).
-- [`scripts/`](./scripts): Standalone build and run automation scripts for iOS and Android.
-- [`docs/`](./docs): Architectural decision records (ADRs), performance baselines, and roadmaps.
+- no WebView, JavaScript runtime, JSON bridge, Flutter engine, or canvas renderer;
+- one versioned little-endian `runtime.MutationBatch` crosses the native boundary per render pass;
+- native code stores integer `NodeID` and `HandlerID` values only—never Go pointers;
+- native view mutations run exclusively on the platform UI thread.
 
----
+For implementation work in this repository, load the project skill at [`.agents/skills/go-native/SKILL.md`](.agents/skills/go-native/SKILL.md).
 
-## Core Invariants & Rules
+## Source-of-truth map
 
-1. **Protocol Synchronization**:
-   - Binary serialization is defined in [`runtime/protocol.go`](./runtime/protocol.go) with `protocolVersion`.
-   - Any change to `ui.Props` or binary serialization fields **MUST** be mirrored identically in:
-     - [`runtime/protocol.go`](./runtime/protocol.go) (Go encoding & test decoding)
-     - [`platform/ios/GoNativeRenderer.m`](./platform/ios/GoNativeRenderer.m) (`GNApply`, `GNStyle`)
-     - [`platform/android/src/dev/gonative/counter/MainActivity.java`](./platform/android/src/dev/gonative/counter/MainActivity.java) (`applyOnUiThread`)
-   - Protocol version constants in all 3 layers must match.
+- `ui/node.go`: node types, IDs, `Props`, component contract, explicit identity.
+- `ui/components.go`: public primitives and fluent modifiers.
+- `ui/state.go`: goroutine-safe state and the process-wide render scheduler.
+- `ui/intents.go`: gesture and animation contracts.
+- `ui/presentation.go`: navigation/modal contracts; these currently expose metadata and fallback content, not full native mounting.
+- `runtime/reconciler.go`: mutation ordering and keyed/unkeyed identity behavior.
+- `runtime/runtime.go`: scheduling, handler binding/release, diagnostics, timing, and renderer calls.
+- `runtime/protocol.go`: canonical binary wire layout and protocol version.
+- `runtime/interactions.go`: nested gesture/animation payload embedded in `Props.Interactions`.
+- `platform/ios/GoNativeRenderer.m`: UIKit decoder and renderer.
+- `platform/android/src/dev/gonative/counter/MainActivity.java`: Android decoder and renderer.
+- `cmd/gonative/main.go`: CLI dispatch, toolchain doctor, standalone builds.
+- `cmd/gonative/templates.go`: generated standalone project sources. Changes to platform bridges or renderers often need matching template changes.
+- `examples/counter/`: framework demo bridge.
+- `examples/my-project/`: checked-in generated-project fixture; keep it aligned with scaffolding when generator behavior changes.
+- `runtime/inspector/`: loopback-only, read-only diagnostic HTTP service.
 
-2. **UI Thread & Concurrency Safety**:
-   - `ui.State[T]` updates can happen from any goroutine.
-   - `runtime.Runtime.Schedule()` coalesces renders and serializes reconciliation.
-   - Native renderers **must** execute DOM/view mutations exclusively on the platform UI thread (`dispatch_async(dispatch_get_main_queue(), ...)` on iOS, `runOnUiThread(...)` on Android).
+Narrative documentation can lag implementation. Resolve discrepancies in this order: tests and live source, ADRs, then overview/roadmap prose. In particular, `docs/architecture.md` and `docs/roadmap.md` currently understate implemented gesture/animation/diagnostic contracts.
 
-3. **Memory & Handler Lifecycle**:
-   - Native view destruction or replacement must unbind and release event handlers via `releaseTree()` / `EventRegistry.Release(id)`.
-   - Native code retains zero Go pointers.
+## Cross-layer invariants
 
-4. **Testing & Quality Gates**:
-   - Run tests: `go test -race ./...`
-   - Vet code: `go vet ./...`
-   - Verify formatting: `gofmt -l .`
-   - Check performance: `make benchmark`
-   - Check toolchains: `go run ./cmd/gonative doctor`
+### Protocol changes
+
+Any wire-visible change—including `ui.NodeType`, mutation values, `ui.Props`, interaction payloads, or field order—must be reviewed across:
+
+1. `ui/` declarations and tests;
+2. `runtime/protocol.go`, `runtime/interactions.go`, and protocol/runtime tests;
+3. iOS and Android framework renderers;
+4. `cmd/gonative/templates.go` generated renderer/bridge text;
+5. checked-in generated example renderers under `examples/my-project/`.
+
+The current protocol version is `7`. Native decoders currently compare literal `7` values, so search for the old version before bumping it. Preserve exact field order, byte widths, signedness, little-endian encoding, and length-prefix handling.
+
+### Identity and handlers
+
+- Unkeyed identity is stabilized by type and structural position.
+- `ui.WithID` provides explicit identity for reorderable children.
+- Reuse handler IDs when logical nodes survive; replace their Go callbacks in the registry.
+- Release action, value, boolean, and gesture handlers when nodes disappear, are replaced, or the runtime stops.
+- Never retain Go pointers or closures in Objective-C/Java state.
+
+### Threading and ownership
+
+- `ui.State[T]` may be changed from any goroutine.
+- `runtime.Runtime.Schedule` coalesces renders; reconciliation and tree ownership remain serialized.
+- iOS copies bytes before dispatching to the main queue.
+- Android clones the payload before `runOnUiThread`.
+- Native teardown must stop the Go runtime and clear native registries/references.
+
+## Change discipline
+
+- Inspect `git status --short` before editing. Preserve unrelated user changes.
+- Keep architecture changes synchronized across Go, iOS, Android, templates, examples, tests, and relevant ADR/docs.
+- Add focused tests beside the owning package. Protocol changes require round-trip and renderer-alignment coverage where practical.
+- Do not claim native behavior is complete from Go-only tests; build or device verification is required when platform behavior changes.
+
+## Verification
+
+Run the smallest relevant checks while iterating, then the applicable gates:
+
+```bash
+go test -race ./...
+go vet ./...
+gofmt -l .
+make benchmark
+go run ./cmd/gonative doctor
+```
+
+For native changes also run the relevant builds:
+
+```bash
+go run ./cmd/gonative build ios
+go run ./cmd/gonative build android
+```
+
+Native benchmark commands are `go run ./cmd/gonative benchmark native ios` and `... android`. Toolchain-dependent failures should be reported separately from code/test failures.

@@ -36,6 +36,7 @@ import android.view.animation.OvershootInterpolator;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.WeakHashMap;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -63,6 +64,7 @@ public final class MainActivity extends Activity {
 
     private final LongSparseArray<View> views = new LongSparseArray<>();
     private final LongSparseArray<GestureBinding> gestureBindings = new LongSparseArray<>();
+    private final WeakHashMap<EditText, TextWatcher> textWatchers = new WeakHashMap<>();
 
     private native void nativeStart();
     private native void nativeDispatchEvent(long handler);
@@ -74,6 +76,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        getWindow().getDecorView().setBackgroundColor(android.graphics.Color.WHITE);
         nativeStart();
     }
 
@@ -81,6 +84,7 @@ public final class MainActivity extends Activity {
         nativeStop();
         for (int i = 0; i < gestureBindings.size(); i++) gestureBindings.valueAt(i).dispose();
         gestureBindings.clear();
+        textWatchers.clear();
         for (int i = 0; i < views.size(); i++) views.valueAt(i).animate().cancel();
         views.clear();
         super.onDestroy();
@@ -142,7 +146,11 @@ public final class MainActivity extends Activity {
                     views.put(nodeID, view);
                     style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
                     applyInteractions(nodeID, view, interactions);
-                    if (views.size() == 1) setContentView(view);
+                    if (views.size() == 1) {
+                        view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                        view.setBackgroundColor(android.graphics.Color.WHITE);
+                        setContentView(view);
+                    }
                 } else if (mutation == UPDATE) {
                     if (view != null) {
                         style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
@@ -153,7 +161,13 @@ public final class MainActivity extends Activity {
                     if (parentView instanceof ViewGroup && view != null) {
                         ViewGroup parent = (ViewGroup) parentView;
                         detach(view);
-                        parent.addView(view, Math.min(Math.max(index, 0), parent.getChildCount()));
+                        if (parent instanceof ScrollView || parent instanceof HorizontalScrollView) {
+                            parent.removeAllViews();
+                            ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                            parent.addView(view, lp);
+                        } else {
+                            parent.addView(view, Math.min(Math.max(index, 0), parent.getChildCount()));
+                        }
                     }
                 } else if (mutation == REMOVE) {
                     detach(view);
@@ -162,10 +176,17 @@ public final class MainActivity extends Activity {
                     if (parentView instanceof ViewGroup && view != null) {
                         ViewGroup parent = (ViewGroup) parentView;
                         detach(view);
-                        parent.addView(view, Math.min(Math.max(index, 0), parent.getChildCount()));
+                        if (parent instanceof ScrollView || parent instanceof HorizontalScrollView) {
+                            parent.removeAllViews();
+                            ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                            parent.addView(view, lp);
+                        } else {
+                            parent.addView(view, Math.min(Math.max(index, 0), parent.getChildCount()));
+                        }
                     }
                 } else if (mutation == DELETE) {
                     detach(view);
+                    if (view instanceof EditText) textWatchers.remove((EditText) view);
                     GestureBinding binding = gestureBindings.get(nodeID);
                     if (binding != null) binding.dispose();
                     gestureBindings.remove(nodeID);
@@ -182,13 +203,27 @@ public final class MainActivity extends Activity {
     }
 
     private View makeView(int kind, boolean horizontal) {
-        if (kind == TEXT) return new TextView(this);
+        if (kind == TEXT) {
+            TextView tv = new TextView(this);
+            tv.setTextColor(android.graphics.Color.BLACK);
+            return tv;
+        }
         if (kind == BUTTON) return new Button(this);
         if (kind == TEXT_INPUT) return new EditText(this);
         if (kind == SWITCH) return new Switch(this);
         if (kind == PROGRESS_INDICATOR) { ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); bar.setMax(10000); return bar; }
         if (kind == IMAGE) return new ImageView(this);
-        if (kind == SCROLL_VIEW) return horizontal ? new HorizontalScrollView(this) : new ScrollView(this);
+        if (kind == SCROLL_VIEW) {
+            if (horizontal) {
+                HorizontalScrollView hsv = new HorizontalScrollView(this);
+                hsv.setFillViewport(true);
+                return hsv;
+            } else {
+                ScrollView sv = new ScrollView(this);
+                sv.setFillViewport(true);
+                return sv;
+            }
+        }
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(kind == ROW ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         if (kind == SAFE_AREA) layout.setFitsSystemWindows(true);
@@ -203,12 +238,26 @@ public final class MainActivity extends Activity {
             textView.setText(text);
             if (fontSize > 0) textView.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize);
             textView.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
+            textView.setIncludeFontPadding(false);
+            textView.setTextColor(android.graphics.Color.parseColor("#111111"));
         }
         if (kind == BUTTON && view instanceof Button) {
             Button btn = (Button) view;
             btn.setText(text);
             if (fontSize > 0) btn.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize);
             btn.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
+            btn.setAllCaps(false);
+            btn.setIncludeFontPadding(false);
+            btn.setGravity(Gravity.CENTER);
+            btn.setMinHeight(0);
+            btn.setMinimumHeight(0);
+            btn.setElevation(0);
+            android.graphics.drawable.GradientDrawable btnBg = new android.graphics.drawable.GradientDrawable();
+            btnBg.setColor(android.graphics.Color.parseColor("#007AFF"));
+            btnBg.setCornerRadius(dp(8));
+            btn.setBackground(btnBg);
+            btn.setTextColor(android.graphics.Color.WHITE);
+            btn.setPadding(dp(16), 0, dp(16), 0);
             final long eventHandler = handler;
             if (eventHandler != 0) {
                 view.setOnClickListener(new View.OnClickListener() {
@@ -220,10 +269,24 @@ public final class MainActivity extends Activity {
         }
         if (view instanceof EditText) {
             EditText field = (EditText) view;
-            Object existing = field.getTag(android.R.id.custom);
-            if (existing instanceof TextWatcher) field.removeTextChangedListener((TextWatcher) existing);
+            field.setSingleLine(true);
+            field.setGravity(Gravity.CENTER_VERTICAL);
+            field.setIncludeFontPadding(false);
+            field.setMinHeight(dp(44));
+            if (hint != null && !hint.isEmpty()) field.setHint(hint);
+            field.setTextColor(android.graphics.Color.BLACK);
+            field.setHintTextColor(android.graphics.Color.parseColor("#8E8E93"));
+            android.graphics.drawable.GradientDrawable fieldBg = new android.graphics.drawable.GradientDrawable();
+            fieldBg.setColor(android.graphics.Color.parseColor("#FAFAFC"));
+            fieldBg.setCornerRadius(dp(8));
+            fieldBg.setStroke(dp(1), android.graphics.Color.parseColor("#D1D1D6"));
+            field.setBackground(fieldBg);
+            int padX = dp(12), padY = dp(8);
+            field.setPadding(padX, padY, padX, padY);
+            TextWatcher existing = textWatchers.get(field);
+            if (existing != null) field.removeTextChangedListener(existing);
             if (text != null && !field.getText().toString().equals(text)) { field.setText(text); field.setSelection(field.length()); }
-            if (fontSize > 0) field.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize);
+            field.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize > 0 ? fontSize : 16);
             field.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
             final long eventHandler = changeHandler;
             TextWatcher watcher = new TextWatcher() {
@@ -231,7 +294,7 @@ public final class MainActivity extends Activity {
                 public void onTextChanged(CharSequence s, int start, int before, int count) { if (eventHandler != 0) nativeDispatchValueEvent(eventHandler, s.toString()); }
                 public void afterTextChanged(Editable s) {}
             };
-            field.addTextChangedListener(watcher); field.setTag(android.R.id.custom, watcher);
+            field.addTextChangedListener(watcher); textWatchers.put(field, watcher);
         }
         if (view instanceof Switch) {
             Switch toggle = (Switch) view;
@@ -249,15 +312,40 @@ public final class MainActivity extends Activity {
             if (imageSource != null && !imageSource.isEmpty()) {
                 int resource = getResources().getIdentifier(imageSource, "drawable", getPackageName());
                 if (resource == 0) resource = getResources().getIdentifier(imageSource, "mipmap", getPackageName());
-                if (resource != 0) image.setImageResource(resource);
-                else image.setImageDrawable(null);
+                if (resource != 0) {
+                    image.setImageResource(resource);
+                } else if ("app_logo".equals(imageSource)) {
+                    android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+                    gd.setColor(android.graphics.Color.parseColor("#007AFF"));
+                    gd.setCornerRadius(dp(16));
+                    image.setBackground(gd);
+                    image.setImageResource(android.R.drawable.ic_lock_lock);
+                    image.setColorFilter(android.graphics.Color.WHITE);
+                    int pad = dp(12);
+                    image.setPadding(pad, pad, pad, pad);
+                } else if ("avatar".equals(imageSource)) {
+                    android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+                    gd.setColor(android.graphics.Color.parseColor("#007AFF"));
+                    gd.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                    image.setBackground(gd);
+                    image.setImageResource(android.R.drawable.ic_menu_myplaces);
+                    image.setColorFilter(android.graphics.Color.WHITE);
+                    int pad = dp(10);
+                    image.setPadding(pad, pad, pad, pad);
+                } else {
+                    image.setImageDrawable(null);
+                }
             } else {
                 image.setImageDrawable(null);
             }
             image.setScaleType(imageMode == 1 ? ImageView.ScaleType.CENTER_CROP : imageMode == 2 ? ImageView.ScaleType.CENTER : ImageView.ScaleType.FIT_CENTER);
         }
         int paddingPx = dp(padding);
-        view.setPadding(paddingPx, paddingPx, paddingPx, paddingPx);
+        if (view instanceof EditText) {
+            view.setPadding(dp(12) + paddingPx, dp(8) + paddingPx, dp(12) + paddingPx, dp(8) + paddingPx);
+        } else {
+            view.setPadding(paddingPx, paddingPx, paddingPx, paddingPx);
+        }
         view.setContentDescription(accessibility.isEmpty() ? text : accessibility);
         view.setAccessibilityDelegate(new View.AccessibilityDelegate() {
             @Override public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {

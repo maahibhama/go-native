@@ -287,6 +287,31 @@ func runStandalonePlatformCommand(root, action, platform string, runner commandR
 	return fmt.Errorf("unsupported platform command %s %s", action, platform)
 }
 
+func findNDKToolchain(sdk, preferredVersion, hostTag string) (string, error) {
+	if preferredVersion != "" {
+		p := filepath.Join(sdk, "ndk", preferredVersion, "toolchains", "llvm", "prebuilt", hostTag)
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+	ndkParent := filepath.Join(sdk, "ndk")
+	if entries, err := os.ReadDir(ndkParent); err == nil {
+		for i := len(entries) - 1; i >= 0; i-- {
+			if entries[i].IsDir() {
+				p := filepath.Join(ndkParent, entries[i].Name(), "toolchains", "llvm", "prebuilt", hostTag)
+				if _, err := os.Stat(p); err == nil {
+					return p, nil
+				}
+			}
+		}
+	}
+	bundlePath := filepath.Join(sdk, "ndk-bundle", "toolchains", "llvm", "prebuilt", hostTag)
+	if _, err := os.Stat(bundlePath); err == nil {
+		return bundlePath, nil
+	}
+	return "", fmt.Errorf("Android NDK LLVM toolchain not found under %s", sdk)
+}
+
 func buildStandaloneAndroidLibs(root string, env []string, runner commandRunner, stdout, stderr io.Writer) error {
 	sdk := os.Getenv("ANDROID_SDK_ROOT")
 	if sdk == "" {
@@ -304,13 +329,17 @@ func buildStandaloneAndroidLibs(root string, env []string, runner commandRunner,
 	if hostTag == "" {
 		hostTag = "darwin-x86_64"
 	}
-	toolchain := filepath.Join(sdk, "ndk", ndkVersion, "toolchains", "llvm", "prebuilt", hostTag)
+	toolchain, err := findNDKToolchain(sdk, ndkVersion, hostTag)
+	if err != nil {
+		return err
+	}
 	abis := os.Getenv("GONATIVE_ANDROID_ABIS")
 	if abis == "" {
 		abis = "arm64-v8a,x86_64"
 	}
 
 	buildDir := filepath.Join(root, "build", "android", "lib")
+	compiledCount := 0
 	for _, abi := range strings.Split(abis, ",") {
 		abi = strings.TrimSpace(abi)
 		if abi == "" {
@@ -346,6 +375,10 @@ func buildStandaloneAndroidLibs(root string, env []string, runner commandRunner,
 			return fmt.Errorf("compile android native lib for %s: %w", abi, err)
 		}
 		_ = os.Remove(filepath.Join(outDir, "libgonative.h"))
+		compiledCount++
+	}
+	if compiledCount == 0 {
+		return fmt.Errorf("no supported ABI compilers found in toolchain %s", toolchain)
 	}
 	return nil
 }
