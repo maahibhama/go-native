@@ -1,3 +1,6 @@
 /build/
 /.gonative/
+/platform/android/.gradle/
+/platform/android/build/
+/platform/android/app/build/
 .DS_Store

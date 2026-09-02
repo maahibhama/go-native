@@ -20,3 +20,51 @@ func TestSafeAreaNode(t *testing.T) {
 		t.Fatalf("unexpected safe area: %#v", n)
 	}
 }
+
+func TestTextInputNode(t *testing.T) {
+	called := ""
+	n := TextInput("initial", func(value string) { called = value }).Build()
+	if n.Type != NodeTextInput || n.Props.Text != "initial" || n.Change == nil {
+		t.Fatalf("unexpected text input: %#v", n)
+	}
+	n.Change("edited")
+	if called != "edited" {
+		t.Fatalf("change value=%q", called)
+	}
+}
+
+func TestSwitchAndProgressNodes(t *testing.T) {
+	got := false
+	toggle := Switch(true, func(value bool) { got = value }).Build()
+	if toggle.Type != NodeSwitch || !toggle.Props.Checked || toggle.Toggle == nil {
+		t.Fatalf("unexpected switch: %#v", toggle)
+	}
+	toggle.Toggle(true)
+	if !got {
+		t.Fatal("toggle handler not invoked")
+	}
+	for _, tc := range []struct{ in, want float32 }{{-1, 0}, {.4, .4}, {2, 1}} {
+		n := ProgressIndicator(tc.in).Build()
+		if n.Type != NodeProgressIndicator || n.Props.Progress != tc.want {
+			t.Fatalf("progress(%v)=%#v", tc.in, n)
+		}
+	}
+}
+
+func TestImageAndScrollViewNodes(t *testing.T) {
+	image := Image("logo").ResizeMode(ImageFill).Width(80).Height(80).Build()
+	if image.Type != NodeImage || image.Props.ImageSource != "logo" || image.Props.ImageMode != ImageFill {
+		t.Fatalf("unexpected image: %#v", image)
+	}
+	scroll := ScrollView(Row(Text("one"), Text("two"))).HorizontalScroll().Build()
+	if scroll.Type != NodeScrollView || !scroll.Props.Horizontal || len(scroll.Children) != 1 {
+		t.Fatalf("unexpected scroll: %#v", scroll)
+	}
+}
+
+func TestAccessibilityModifiers(t *testing.T) {
+	n := Text("Title").AccessibilityLabel("Screen title").AccessibilityHint("Introduces the screen").AccessibilityRole(RoleHeader).AccessibilityFocused(true).ScalesText().Build()
+	if n.Props.AccessLabel != "Screen title" || n.Props.AccessHint != "Introduces the screen" || n.Props.AccessRole != RoleHeader || !n.Props.Focused || !n.Props.ScalesText {
+		t.Fatalf("unexpected accessibility props: %#v", n.Props)
+	}
+}

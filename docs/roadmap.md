@@ -18,8 +18,8 @@ An item is complete only when it has tests, relevant documentation, successful i
 ## Public API
 
 - [x] SafeArea and TextFunc
-- [ ] Accessibility role, hint, focus, and scalable text
-- [ ] TextInput, Image, ScrollView, Switch, and ProgressIndicator
+- [x] Accessibility role, hint, focus, and scalable text
+- [x] TextInput, Image, ScrollView, Switch, and ProgressIndicator
 - [ ] Modal and navigation contracts
 
 Every primitive requires typed props, reconciliation and protocol tests, both native mappings, accessibility behavior, and an example.
@@ -33,12 +33,12 @@ Every primitive requires typed props, reconciliation and protocol tests, both na
 
 ## Tooling and distribution
 
-- [ ] `gonative init`
-- [ ] Conventional Android Gradle packaging and multi-ABI artifacts
-- [ ] iOS device/release-signing workflow
+- [x] Minimal, no-overwrite `gonative init <name>` Go application scaffold
+- [x] Conventional Android Gradle/AndroidX project, vendored wrapper, and multi-ABI packaging ([ ] offline dependency cache)
+- [x] Explicit iOS physical-device compile and signing workflow
 - [ ] Component/event logging and UI tree inspector
 - [ ] Source reload investigation
-- [ ] Native baseline benchmark automation
+- [x] Native timing JSONL collection harness ([ ] controlled interaction automation)
 
 ## Future platforms
 

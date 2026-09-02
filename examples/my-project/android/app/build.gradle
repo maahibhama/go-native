@@ -1,0 +1,55 @@
+plugins {
+    id "com.android.application"
+}
+
+def selectedAbis = (System.getenv("GONATIVE_ANDROID_ABIS") ?: "arm64-v8a,x86_64").split(",")
+def rootDir = rootProject.projectDir.parentFile
+
+android {
+    namespace "dev.gonative.my_project"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "dev.gonative.my_project"
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName "0.1"
+        ndk {
+            abiFilters(*selectedAbis)
+        }
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ["../../build/android/lib"]
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation "androidx.recyclerview:recyclerview:1.4.0"
+}
+
+tasks.register("prepareGoNativeLibraries", Exec) {
+    workingDir rootProject.projectDir.parentFile
+    commandLine "sh", "${rootProject.projectDir}/build-libs.sh"
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("prepareGoNativeLibraries")
+}

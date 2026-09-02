@@ -32,14 +32,16 @@ Implementation status and acceptance criteria are tracked in [docs/roadmap.md](d
 Run the narrow Milestone 0 CLI directly during development:
 
 ```bash
+go run ./cmd/gonative init my-app
 go run ./cmd/gonative doctor
 go run ./cmd/gonative build ios
+go run ./cmd/gonative build ios-device
 go run ./cmd/gonative run ios
 go run ./cmd/gonative build android
 go run ./cmd/gonative run android
 ```
 
-Or install it on your `PATH` with `go install ./cmd/gonative`. Project initialization and generalized application builds are intentionally deferred.
+Or install it on your `PATH` with `go install ./cmd/gonative`. `gonative init <name>` creates a complete application project including `app.go`, native `ios/` (UIKit host), and native `android/` (Views + Gradle host) directories ready for Xcode, Android Studio, and standalone CLI builds. Until the framework has a published module release, follow the generated README to point the application at a local checkout.
 
 ## Build the iOS counter
 
@@ -48,6 +50,16 @@ Or install it on your `PATH` with `go install ./cmd/gonative`. Project initializ
 ```
 
 The signed simulator bundle is written to `build/ios-simulator/GoNativeCounter.app`.
+
+For a signed arm64 bundle suitable for a physical iPhone, provide an installed signing identity and a provisioning profile:
+
+```bash
+GONATIVE_IOS_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" \
+GONATIVE_IOS_PROVISIONING_PROFILE=/path/to/profile.mobileprovision \
+go run ./cmd/gonative build ios-device
+```
+
+The device bundle is written to `build/ios-device/GoNativeCounter.app`. The command validates both settings before compiling and intentionally does not guess a signing identity or provisioning profile. Installation remains the responsibility of Xcode or your device-management workflow.
 
 ## Run the iOS counter
 
@@ -79,7 +91,29 @@ Set `ANDROID_SDK_ROOT` if your SDK is not at `~/Library/Android/sdk`, then build
 ./scripts/build-android.sh
 ```
 
-The signed debug APK is written to `build/android/GoNativeCounter.apk`. With an emulator or arm64 device running:
+The signed debug APK is written to `build/android/GoNativeCounter.apk`.
+
+By default the APK contains `arm64-v8a` and `x86_64`. Override the set for a narrower artifact:
+
+```bash
+GONATIVE_ANDROID_ABIS=x86_64 ./scripts/build-android.sh
+```
+
+Unsupported ABI names fail before packaging.
+
+### Gradle packaging
+
+A conventional Android application project is checked in under `platform/android`. Its `preBuild` task compiles the selected Go shared libraries and packages the same manifest, Java host, resources, and ABI directories as the SDK-only script:
+
+```bash
+./platform/android/gradlew -p platform/android assembleDebug
+```
+
+The debug APK is written below `platform/android/app/build/outputs/apk/debug`. `GONATIVE_ANDROID_ABIS`, `ANDROID_SDK_ROOT`, and `GONATIVE_NDK_VERSION` have the same meanings in both workflows. The project enables AndroidX and declares RecyclerView 1.4.0 for the virtualized-list renderer path.
+
+The repository vendors a Gradle wrapper pinned to 8.14.5. Its first run requires network access to download that Gradle distribution and resolve Android Gradle Plugin 8.9.1 plus AndroidX RecyclerView. The dependency-free `./scripts/build-android.sh` workflow remains supported for primitives that only use Android framework classes; AndroidX-backed primitives require Gradle packaging.
+
+With an emulator or device running:
 
 ```bash
 ./scripts/run-android.sh

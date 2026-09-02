@@ -7,6 +7,9 @@
 
 extern void GoNativeAndroidStart(void);
 extern void GoNativeAndroidDispatchEvent(uint64_t handler);
+extern void GoNativeAndroidDispatchValueEvent(uint64_t handler, const char *value);
+extern void GoNativeAndroidDispatchBoolEvent(uint64_t handler, uint8_t value);
+extern void GoNativeAndroidDispatchGestureEvent(uint64_t handler, float translationX, float translationY, float velocityX, float velocityY);
 extern void GoNativeAndroidStop(void);
 extern void GoNativeAndroidReportBatchApplied(uint64_t sequence, uint64_t nativeNanos);
 
@@ -40,6 +43,25 @@ Java_dev_gonative_counter_MainActivity_nativeDispatchEvent(JNIEnv *env, jobject 
     (void)env;
     (void)renderer;
     GoNativeAndroidDispatchEvent((uint64_t)handler);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_gonative_counter_MainActivity_nativeDispatchValueEvent(JNIEnv *env, jobject renderer, jlong handler, jstring value) {
+    (void)renderer;
+    const char *utf8 = value ? (*env)->GetStringUTFChars(env, value, NULL) : "";
+    if (utf8) { GoNativeAndroidDispatchValueEvent((uint64_t)handler, utf8); }
+    if (value && utf8) { (*env)->ReleaseStringUTFChars(env, value, utf8); }
+}
+JNIEXPORT void JNICALL
+Java_dev_gonative_counter_MainActivity_nativeDispatchBoolEvent(JNIEnv *env, jobject renderer, jlong handler, jboolean value) {
+    (void)env; (void)renderer; GoNativeAndroidDispatchBoolEvent((uint64_t)handler, value ? 1 : 0);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_gonative_counter_MainActivity_nativeDispatchGestureEvent(JNIEnv *env, jobject renderer, jlong handler, jfloat translationX, jfloat translationY, jfloat velocityX, jfloat velocityY) {
+    (void)env;
+    (void)renderer;
+    GoNativeAndroidDispatchGestureEvent((uint64_t)handler, (float)translationX, (float)translationY, (float)velocityX, (float)velocityY);
 }
 
 JNIEXPORT void JNICALL

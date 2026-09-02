@@ -98,6 +98,18 @@ func TestReconcileNestedUpdate(t *testing.T) {
 
 func TestMutationBatchBinaryRoundTrip(t *testing.T) {
 	in := Reconcile(nil, node(1, ui.NodeText, "hello"))
+	in.Mutations[0].Props.AccessHint = "spoken hint"
+	in.Mutations[0].Props.AccessRole = ui.RoleHeader
+	in.Mutations[0].Props.Focused = true
+	in.Mutations[0].Props.ScalesText = true
+	in.Mutations[0].Props.OnChange = 42
+	in.Mutations[0].Props.OnToggle = 43
+	in.Mutations[0].Props.Checked = true
+	in.Mutations[0].Props.Progress = .75
+	in.Mutations[0].Props.ImageSource = "logo"
+	in.Mutations[0].Props.ImageMode = ui.ImageFill
+	in.Mutations[0].Props.Horizontal = true
+	in.Mutations[0].Props.Interactions = string([]byte{0, 1, 0, 255})
 	data, err := in.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
