@@ -109,6 +109,74 @@ func TestKeyedButtonReorderPreservesHandlerIdentity(t *testing.T) {
 	}
 }
 
+func TestTextInputValueHandlerRetainsIdentity(t *testing.T) {
+	r := New(func() ui.Component { return nil }, &recordingRenderer{})
+	got := ""
+	oldTree := ui.TextInput("a", func(value string) { got = "old:" + value }).Build()
+	r.bindHandlers(nil, oldTree)
+	id := oldTree.Props.OnChange
+	nextTree := ui.TextInput("b", func(value string) { got = "new:" + value }).Build()
+	r.bindHandlers(oldTree, nextTree)
+	if id == 0 || nextTree.Props.OnChange != id {
+		t.Fatalf("handler identity changed: %d -> %d", id, nextTree.Props.OnChange)
+	}
+	if !r.DispatchValue(id, "typed") || got != "new:typed" {
+		t.Fatalf("value callback got %q", got)
+	}
+	r.releaseRemovedHandlers(nextTree, nil)
+	if r.DispatchValue(id, "ignored") {
+		t.Fatal("removed value handler dispatched")
+	}
+}
+
+func TestSwitchHandlerRetainsIdentity(t *testing.T) {
+	r := New(func() ui.Component { return nil }, &recordingRenderer{})
+	got := false
+	oldTree := ui.Switch(false, func(bool) {}).Build()
+	r.bindHandlers(nil, oldTree)
+	id := oldTree.Props.OnToggle
+	next := ui.Switch(true, func(v bool) { got = v }).Build()
+	r.bindHandlers(oldTree, next)
+	if id == 0 || next.Props.OnToggle != id {
+		t.Fatalf("toggle identity changed: %d -> %d", id, next.Props.OnToggle)
+	}
+	if !r.DispatchBool(id, true) || !got {
+		t.Fatal("toggle not dispatched")
+	}
+	r.releaseRemovedHandlers(next, nil)
+	if r.DispatchBool(id, false) {
+		t.Fatal("removed toggle dispatched")
+	}
+}
+
+func TestGestureHandlersRetainPerIndexIdentityAndEncodeAllIntents(t *testing.T) {
+	r := New(func() ui.Component { return nil }, &recordingRenderer{})
+	calls := 0
+	makeNode := func(delta int) *ui.Node {
+		return ui.WithAnimation(ui.WithGesture(ui.WithGesture(ui.Text("target"), ui.GestureIntent{Kind: ui.GestureTap, Handler: func(ui.GestureEvent) { calls += delta }}), ui.GestureIntent{Kind: ui.GestureLongPress, MinimumPress: 400 * time.Millisecond, Handler: func(ui.GestureEvent) { calls += delta * 10 }}), ui.AnimationIntent{Property: ui.AnimateScale, Duration: 180 * time.Millisecond, Curve: ui.CurveSpring, SpringDamping: .8, ReduceMotionOK: true}).Build()
+	}
+	old := makeNode(1)
+	r.bindHandlers(nil, old)
+	if len(old.GestureHandlerIDs) != 2 || len(old.Props.Interactions) == 0 {
+		t.Fatalf("missing interaction descriptors: %#v", old)
+	}
+	ids := append([]ui.HandlerID(nil), old.GestureHandlerIDs...)
+	next := makeNode(2)
+	r.bindHandlers(old, next)
+	if next.GestureHandlerIDs[0] != ids[0] || next.GestureHandlerIDs[1] != ids[1] {
+		t.Fatalf("ids changed: %v -> %v", ids, next.GestureHandlerIDs)
+	}
+	r.DispatchGesture(ids[0], ui.GestureEvent{TranslationX: 1})
+	r.DispatchGesture(ids[1], ui.GestureEvent{VelocityY: 2})
+	if calls != 22 {
+		t.Fatalf("calls=%d", calls)
+	}
+	r.releaseRemovedHandlers(next, nil)
+	if r.DispatchGesture(ids[0], ui.GestureEvent{}) {
+		t.Fatal("removed gesture dispatched")
+	}
+}
+
 func TestStopReleasesHandlersAndSuppressesRenders(t *testing.T) {
 	renderer := &recordingRenderer{}
 	r := New(func() ui.Component { return ui.Button("tap", func() {}) }, renderer)

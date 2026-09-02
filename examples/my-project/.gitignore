@@ -1,0 +1,7 @@
+build/
+.gonative/
+.gradle/
+*.app
+*.apk
+*.idsig
+DerivedData/

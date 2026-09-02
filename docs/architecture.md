@@ -23,7 +23,7 @@ The underlying Go and Apple primitives reviewed for this choice are recorded in 
 - `runtime.Mutation`: create, delete, update, insert, remove, or move with IDs and complete properties.
 - `runtime.MutationBatch`: one ordered set serialized using a versioned little-endian binary protocol.
 - `runtime.Renderer`: `Apply(MutationBatch) error`; it accepts a whole batch and is responsible for UI-thread delivery.
-- `runtime.EventRegistry`: native code retains only `HandlerID`; no Go pointer crosses the boundary.
+- `runtime.EventRegistry`: native code retains only `HandlerID`; no Go pointer crosses the boundary. It supports both action events and UTF-8 value events used by controlled text inputs.
 
 The renderer receives complete props on create/update. This slightly enlarges updates but makes native application deterministic and avoids optional-field ambiguity. The protocol is deliberately small, versioned, and non-JSON.
 
@@ -45,4 +45,6 @@ Milestone 0 translates `Row` and `Column` to `UIStackView`, including padding, g
 
 ## Deferred work
 
-Keyed-list APIs, native virtualized lists, navigation, text input, animation, gestures, hot reload, and production lifecycle handling remain deferred. Accessibility currently maps basic labels and button/label semantics to each native platform; the property model can grow without changing tree shape.
+Keyed-list APIs, native virtualized lists, navigation, animation, gestures, and hot reload remain deferred. Controlled `TextInput` is mapped to `UITextField` and `EditText`; edits cross the bridge as copied UTF-8 strings associated with stable handler IDs. Boolean `Switch` values use a typed boolean callback, while determinate `ProgressIndicator` values are clamped to 0...1 and map to native progress views. Accessibility labels, hints, roles, focus intent, and user-scaled text map to native UIKit and Android accessibility APIs through typed props.
+
+`Image(source)` accepts a bundle/resource name, not a URL or filesystem path. UIKit resolves it with `imageNamed:`; Android resolves a `drawable` and then `mipmap` resource in the application package. Network fetching and caching stay outside the renderer contract. `ScrollView` owns exactly one child and maps to `UIScrollView`, Android `ScrollView`, or `HorizontalScrollView`; multiple items belong inside a `Row` or `Column`.

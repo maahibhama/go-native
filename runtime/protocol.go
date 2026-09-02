@@ -8,7 +8,7 @@ import (
 	"io"
 )
 
-const protocolVersion uint16 = 2
+const protocolVersion uint16 = 7
 
 // MarshalBinary encodes a batch for one coarse-grained native call.
 func (b MutationBatch) MarshalBinary() ([]byte, error) {
@@ -35,10 +35,39 @@ func (b MutationBatch) MarshalBinary() ([]byte, error) {
 		}
 		_ = binary.Write(&out, binary.LittleEndian, m.Props.FontSize)
 		_ = binary.Write(&out, binary.LittleEndian, uint64(m.Props.OnPress))
-		for _, s := range []string{m.Props.Text, m.Props.AccessLabel} {
+		_ = binary.Write(&out, binary.LittleEndian, uint64(m.Props.OnChange))
+		_ = binary.Write(&out, binary.LittleEndian, uint64(m.Props.OnToggle))
+		if m.Props.Checked {
+			out.WriteByte(1)
+		} else {
+			out.WriteByte(0)
+		}
+		_ = binary.Write(&out, binary.LittleEndian, m.Props.Progress)
+		for _, s := range []string{m.Props.Text, m.Props.AccessLabel, m.Props.AccessHint} {
 			_ = binary.Write(&out, binary.LittleEndian, uint32(len(s)))
 			out.WriteString(s)
 		}
+		out.WriteByte(byte(m.Props.AccessRole))
+		if m.Props.Focused {
+			out.WriteByte(1)
+		} else {
+			out.WriteByte(0)
+		}
+		if m.Props.ScalesText {
+			out.WriteByte(1)
+		} else {
+			out.WriteByte(0)
+		}
+		_ = binary.Write(&out, binary.LittleEndian, uint32(len(m.Props.ImageSource)))
+		out.WriteString(m.Props.ImageSource)
+		out.WriteByte(byte(m.Props.ImageMode))
+		if m.Props.Horizontal {
+			out.WriteByte(1)
+		} else {
+			out.WriteByte(0)
+		}
+		_ = binary.Write(&out, binary.LittleEndian, uint32(len(m.Props.Interactions)))
+		out.WriteString(m.Props.Interactions)
 	}
 	return out.Bytes(), nil
 }
@@ -71,7 +100,7 @@ func UnmarshalMutationBatch(data []byte) (MutationBatch, error) {
 		}
 		m.Type = MutationType(a)
 		m.NodeType = ui.NodeType(z)
-		var nid, pid, h uint64
+		var nid, pid, h, change, toggle uint64
 		fields := []any{&nid, &pid, &m.Index, &m.FromIndex, &m.Props.Width, &m.Props.Height, &m.Props.Padding, &m.Props.Gap}
 		for _, f := range fields {
 			if e = binary.Read(r, binary.LittleEndian, f); e != nil {
@@ -94,10 +123,26 @@ func UnmarshalMutationBatch(data []byte) (MutationBatch, error) {
 		if e = binary.Read(r, binary.LittleEndian, &h); e != nil {
 			return MutationBatch{}, e
 		}
+		if e = binary.Read(r, binary.LittleEndian, &change); e != nil {
+			return MutationBatch{}, e
+		}
+		if e = binary.Read(r, binary.LittleEndian, &toggle); e != nil {
+			return MutationBatch{}, e
+		}
+		checked, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		if e = binary.Read(r, binary.LittleEndian, &m.Props.Progress); e != nil {
+			return MutationBatch{}, e
+		}
 		m.NodeID = ui.NodeID(nid)
 		m.ParentID = ui.NodeID(pid)
 		m.Props.OnPress = ui.HandlerID(h)
-		strings := []*string{&m.Props.Text, &m.Props.AccessLabel}
+		m.Props.OnChange = ui.HandlerID(change)
+		m.Props.OnToggle = ui.HandlerID(toggle)
+		m.Props.Checked = checked != 0
+		strings := []*string{&m.Props.Text, &m.Props.AccessLabel, &m.Props.AccessHint}
 		for _, dst := range strings {
 			var n uint32
 			if e = binary.Read(r, binary.LittleEndian, &n); e != nil {
@@ -109,6 +154,49 @@ func UnmarshalMutationBatch(data []byte) (MutationBatch, error) {
 			}
 			*dst = string(buf)
 		}
+		role, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		focused, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		scales, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		m.Props.AccessRole = ui.AccessibilityRole(role)
+		m.Props.Focused = focused != 0
+		m.Props.ScalesText = scales != 0
+		var imageLength uint32
+		if e = binary.Read(r, binary.LittleEndian, &imageLength); e != nil {
+			return MutationBatch{}, e
+		}
+		imageBytes := make([]byte, imageLength)
+		if _, e = io.ReadFull(r, imageBytes); e != nil {
+			return MutationBatch{}, e
+		}
+		m.Props.ImageSource = string(imageBytes)
+		mode, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		horizontal, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		m.Props.ImageMode = ui.ImageResizeMode(mode)
+		m.Props.Horizontal = horizontal != 0
+		var interactionLength uint32
+		if e = binary.Read(r, binary.LittleEndian, &interactionLength); e != nil {
+			return MutationBatch{}, e
+		}
+		interactionBytes := make([]byte, interactionLength)
+		if _, e = io.ReadFull(r, interactionBytes); e != nil {
+			return MutationBatch{}, e
+		}
+		m.Props.Interactions = string(interactionBytes)
 		b.Mutations = append(b.Mutations, m)
 	}
 	return b, nil

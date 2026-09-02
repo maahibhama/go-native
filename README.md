@@ -1,113 +1,167 @@
-# go-native
+# Go Native (`go-native`)
 
-An experimental declarative Go UI runtime that renders genuine platform controls. The counter renders with UIKit `UILabel`/`UIButton` on iOS and Android `TextView`/`Button`—no WebView, JavaScript, HTML, React, canvas, Flutter, or Skia.
+A declarative Go UI framework that compiles and renders genuine platform-native controls on iOS (UIKit) and Android (Android Views) with zero WebView, JavaScript, React Native bridge JSON, Flutter, or Skia canvas overhead.
+
+---
+
+## Key Highlights
+
+- **Direct Native Controls**: Renders UIKit (`UILabel`, `UIButton`, `UIStackView`, `UITextField`, `UISwitch`, `UIProgressView`, `UIImageView`, `UIScrollView`) on iOS and Android Views (`TextView`, `Button`, `LinearLayout`, `EditText`, `Switch`, `ProgressBar`, `ImageView`, `ScrollView`) on Android.
+- **Binary Mutation Batch**: Virtual UI reconciliation emits a compact, little-endian binary batch (`runtime.MutationBatch`) sent across cgo/JNI in **one coarse call per render pass**.
+- **Zero Go Pointers Across Boundaries**: Native event listeners retain only 64-bit integer `HandlerID`s. No Go pointers or objects cross the foreign function interface.
+- **IDE-First Native Workflows**: `gonative init` generates genuine **Xcode** (`.xcodeproj`) and **Android Studio** projects ready for one-click build and debug.
+- **Declarative Gestures & Spring Animations**: Declarative touch intents (Tap, LongPress, Swipe, Pan) and spring/cubic Bézier animations compiled directly into native platform animators (`UIView.animate` / `ValueAnimator`).
+- **Live Diagnostics & Inspector**: Built-in loopback HTTP inspector (`GET /v1/tree`, `GET /v1/logs`) for inspecting virtual trees and performance metrics in real time.
+
+---
+
+## Supported Primitives
+
+| Category | Go Native Primitive | iOS (UIKit) | Android (Views) |
+|---|---|---|---|
+| **Layout** | `ui.View`, `ui.SafeArea` | `UIView`, `GNSafeAreaView` | `LinearLayout` (`fitsSystemWindows`) |
+| **Flex Containers** | `ui.Column`, `ui.Row` | `UIStackView` (vertical / horizontal) | `LinearLayout` (vertical / horizontal) |
+| **Typography** | `ui.Text` | `UILabel` (Dynamic Type support) | `TextView` (SP font scaling) |
+| **Actions** | `ui.Button` | `UIButton` (Target-Action) | `Button` (`OnClickListener`) |
+| **Inputs** | `ui.TextInput` | `UITextField` | `EditText` (`TextWatcher`) |
+| **Toggles** | `ui.Switch` | `UISwitch` | `Switch` (`OnCheckedChangeListener`) |
+| **Indicators** | `ui.ProgressIndicator` | `UIProgressView` | `ProgressBar` (horizontal style) |
+| **Media** | `ui.Image` | `UIImageView` (asset bundles) | `ImageView` (drawables / mipmaps) |
+| **Scrolling** | `ui.ScrollView` | `UIScrollView` | `ScrollView` / `HorizontalScrollView` |
+
+---
 
 ## Requirements
 
-- macOS on Apple Silicon
-- Go 1.24 or newer
-- Xcode with an iOS Simulator runtime
-- Xcode command-line tools selected (`xcode-select -p`)
-- For Android: Android SDK platform 35, build-tools 36.0.0, NDK 28.2.13676358, and JDK 17
+- **Host**: macOS on Apple Silicon (or Intel)
+- **Go**: Go 1.24 or newer
+- **iOS**: Xcode 15+ with iOS Simulator runtime (`xcode-select -p`)
+- **Android**: Android SDK (Platform 35, Build-Tools 36.0.0, NDK 28.2+, JDK 17)
 
-## Test
-
-```bash
-GOCACHE=/tmp/go-native-gocache go test ./...
-GOCACHE=/tmp/go-native-gocache go vet ./...
-```
-
-Run the portable performance suite with:
-
-```bash
-make benchmark
-```
-
-Results and measurement boundaries are documented in [docs/performance.md](docs/performance.md). Native bridge/application timing is tracked separately from Go-side measurements.
-
-Implementation status and acceptance criteria are tracked in [docs/roadmap.md](docs/roadmap.md).
-
-## CLI
-
-Run the narrow Milestone 0 CLI directly during development:
-
+Verify your local toolchain at any time with:
 ```bash
 go run ./cmd/gonative doctor
-go run ./cmd/gonative build ios
-go run ./cmd/gonative run ios
-go run ./cmd/gonative build android
-go run ./cmd/gonative run android
 ```
 
-Or install it on your `PATH` with `go install ./cmd/gonative`. Project initialization and generalized application builds are intentionally deferred.
+---
 
-## Build the iOS counter
+## Quick Start & CLI
+
+Install the `gonative` CLI globally:
+```bash
+go install ./cmd/gonative
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+### 1. Initialize a new project
+```bash
+gonative init my-app
+cd my-app
+```
+
+This scaffolds a complete, standalone native application:
+```text
+my-app/
+├── app.go                  # Pure Go declarative UI tree
+├── go.mod                  # Module dependencies
+├── ios/                    # Native UIKit host + Xcode project
+│   ├── my-app.xcodeproj/   # Open directly in Xcode (Cmd+R)
+│   ├── main.m
+│   ├── GoNativeRenderer.h/.m
+│   └── bridge/
+└── android/                # Native Android Views host + Gradle project
+    ├── build.gradle        # Open directory in Android Studio (Shift+F10)
+    ├── gradlew
+    ├── build-libs.sh       # NDK shared library compiler
+    ├── bridge/
+    └── app/
+        ├── build.gradle
+        └── src/main/java/dev/gonative/my_app/MainActivity.java
+```
+
+### 2. Run via CLI
 
 ```bash
-./scripts/build-ios.sh
+# Build & run on iOS Simulator
+gonative run ios
+
+# Build & run on Android device / emulator
+gonative run android
+
+# Build for physical iOS device (requires signing identity & profile)
+GONATIVE_IOS_SIGNING_IDENTITY="Apple Development: Name (TEAMID)" \
+GONATIVE_IOS_PROVISIONING_PROFILE=/path/to/profile.mobileprovision \
+gonative build ios-device
 ```
 
-The signed simulator bundle is written to `build/ios-simulator/GoNativeCounter.app`.
+### 3. Open & Run in IDEs
 
-## Run the iOS counter
+- **Xcode**: Double click or run `open ios/my-app.xcodeproj`. Select your target simulator and press **Cmd + R**. Xcode automatically invokes Go build phases to compile the bridge archive.
+- **Android Studio**: Open Android Studio, select **Open**, and choose the `android/` directory. Let Gradle sync and press **Shift + F10**.
 
-List available devices if the default `iPhone 17 Pro` is absent:
+---
+
+## Example UI Code
+
+```go
+package app
+
+import (
+	"fmt"
+	"github.com/go-native/go-native/ui"
+)
+
+func App() ui.Component {
+	count := ui.UseState(0)
+
+	return ui.SafeArea(
+		ui.Column(
+			ui.Text("Go Native").FontSize(32).Bold(),
+			ui.Text(fmt.Sprintf("Current count: %d", count.Get())).FontSize(18),
+			ui.Row(
+				ui.Button("Decrement").OnClick(func() {
+					count.Set(count.Get() - 1)
+				}),
+				ui.Button("Increment").OnClick(func() {
+					count.Set(count.Get() + 1)
+				}),
+			).Gap(16),
+		).Padding(24).Gap(16).Align(ui.AlignCenter),
+	)
+}
+```
+
+---
+
+## Testing & Benchmarks
 
 ```bash
-xcrun simctl list devices available
+# Run all unit tests with data race detector
+go test -race ./...
+
+# Run static analysis and code formatting verification
+go vet ./...
+gofmt -l .
+
+# Run Go reconciliation microbenchmarks
+make benchmark
+
+# Run Native Sampling Benchmarks (end-to-end bridge roundtrip)
+gonative benchmark native ios
+gonative benchmark native android
 ```
 
-Then run:
+See [docs/performance.md](docs/performance.md) for benchmark baselines and [docs/architecture.md](docs/architecture.md) for deep technical architecture details.
 
-```bash
-./scripts/run-ios.sh
-```
+---
 
-To select another device:
+## Repository Map
 
-```bash
-GONATIVE_SIMULATOR="iPhone 16 Pro" ./scripts/run-ios.sh
-```
-
-Tap **Increment**. UIKit sends a numeric handler ID to Go, Go updates state and rebuilds the tree, reconciliation emits one label update, and UIKit changes the existing `UILabel` to `Count: 1`.
-
-## Build and run the Android counter
-
-Set `ANDROID_SDK_ROOT` if your SDK is not at `~/Library/Android/sdk`, then build:
-
-```bash
-./scripts/build-android.sh
-```
-
-The signed debug APK is written to `build/android/GoNativeCounter.apk`. With an emulator or arm64 device running:
-
-```bash
-./scripts/run-android.sh
-```
-
-If multiple devices are attached, select one explicitly:
-
-```bash
-GONATIVE_ANDROID_SERIAL=emulator-5554 ./scripts/run-android.sh
-```
-
-The development signing key is generated once under `.gonative/` and reused across clean builds. If upgrading from an older checkout that regenerated its key on every build, Android will reject the first update. Recover explicitly with:
-
-```bash
-GONATIVE_ANDROID_REINSTALL=1 go run ./cmd/gonative run android
-```
-
-This one-time recovery uninstalls the existing counter package and therefore deletes that package's local development data.
-
-The Java host uses `TextView`, `Button`, and `LinearLayout`. JNI carries one binary mutation batch per render and only integer handler IDs on the callback path.
-
-## Repository map
-
-- `ui`: typed declarative primitives and state
-- `runtime`: events, identity, reconciliation, scheduler, and binary mutation protocol
-- `platform/ios`: Objective-C UIKit renderer and host
-- `platform/android`: Java Android Views renderer and host
-- `examples/counter`: all-Go counter app plus the narrow cgo entry bridge
-- `docs`: architecture and decision records
-
-The current milestone intentionally supports only View, Column, Row, Text, and Button. See [docs/architecture.md](docs/architecture.md) for ownership, threading, lifecycle, and deferred scope.
+- [`ui/`](./ui): Declarative primitives, typed `Props`, `State[T]`, gesture/animation intents, and presentation models.
+- [`runtime/`](./runtime): Virtual tree reconciler, identity stabilization, little-endian binary protocol serializer, thread-safe event registry, and timing telemetry.
+- [`runtime/inspector/`](./runtime/inspector): Loopback HTTP diagnostic server (`GET /v1/tree`, `GET /v1/logs`).
+- [`platform/ios/`](./platform/ios): Objective-C UIKit host and renderer.
+- [`platform/android/`](./platform/android): Java Android Views host, GapDrawable, and Gradle build harness.
+- [`cmd/gonative/`](./cmd/gonative): Developer CLI (`init`, `doctor`, `build`, `run`, `benchmark native`).
+- [`examples/counter/`](./examples/counter): Interactive counter demo application and cgo/JNI bridge entrypoints.
+- [`docs/`](./docs): Architectural decision records (ADRs), roadmap, performance baselines, and diagnostics guides.

@@ -12,18 +12,19 @@ type App func() ui.Component
 
 // Runtime owns tree identity, handlers, reconciliation, and render scheduling.
 type Runtime struct {
-	app       App
-	renderer  Renderer
-	events    *EventRegistry
-	mu        sync.Mutex
-	tree      *ui.Node
-	scheduled bool
-	stopped   bool
-	sequence  atomic.Uint64
-	timingMu  sync.Mutex
-	pending   map[uint64]pendingTiming
-	samples   []TimingSample
-	eventAt   time.Time
+	app         App
+	renderer    Renderer
+	events      *EventRegistry
+	mu          sync.Mutex
+	tree        *ui.Node
+	scheduled   bool
+	stopped     bool
+	sequence    atomic.Uint64
+	timingMu    sync.Mutex
+	pending     map[uint64]pendingTiming
+	samples     []TimingSample
+	eventAt     time.Time
+	diagnostics *Diagnostics
 }
 
 type pendingTiming struct {
@@ -36,7 +37,7 @@ const timingHistoryLimit uint64 = 1024
 
 // New creates an application runtime.
 func New(app App, renderer Renderer) *Runtime {
-	return &Runtime{app: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming)}
+	return &Runtime{app: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming), diagnostics: NewDiagnostics()}
 }
 
 // Start renders the initial tree and installs this runtime as the state scheduler.
@@ -45,6 +46,7 @@ func (r *Runtime) Start() error {
 	r.stopped = false
 	r.mu.Unlock()
 	ui.SetScheduler(r)
+	r.diagnostics.Record(LogEntry{Kind: LogRuntimeStarted})
 	return r.render()
 }
 
@@ -61,6 +63,7 @@ func (r *Runtime) Stop() {
 	r.tree = nil
 	r.mu.Unlock()
 	ui.SetScheduler(nil)
+	r.diagnostics.Record(LogEntry{Kind: LogRuntimeStopped})
 }
 
 // Schedule coalesces synchronous/re-entrant updates. Rendering is serialized.
@@ -83,12 +86,71 @@ func (r *Runtime) Dispatch(id ui.HandlerID) bool {
 	r.eventAt = time.Now()
 	r.timingMu.Unlock()
 	if r.events.Dispatch(id) {
+		r.diagnostics.Record(LogEntry{Kind: LogEventDispatched, HandlerID: id})
+		return true
+	}
+	r.timingMu.Lock()
+	r.eventAt = time.Time{}
+	r.timingMu.Unlock()
+	r.diagnostics.Record(LogEntry{Kind: LogEventMissing, HandlerID: id})
+	return false
+}
+
+// DispatchValue invokes a native value event callback by ID.
+func (r *Runtime) DispatchValue(id ui.HandlerID, value string) bool {
+	r.timingMu.Lock()
+	r.eventAt = time.Now()
+	r.timingMu.Unlock()
+	if r.events.DispatchValue(id, value) {
+		r.diagnostics.Record(LogEntry{Kind: LogEventDispatched, HandlerID: id})
+		return true
+	}
+	r.timingMu.Lock()
+	r.eventAt = time.Time{}
+	r.timingMu.Unlock()
+	r.diagnostics.Record(LogEntry{Kind: LogEventMissing, HandlerID: id})
+	return false
+}
+
+// DispatchBool invokes a native boolean event callback by ID.
+func (r *Runtime) DispatchBool(id ui.HandlerID, value bool) bool {
+	r.timingMu.Lock()
+	r.eventAt = time.Now()
+	r.timingMu.Unlock()
+	if r.events.DispatchBool(id, value) {
 		return true
 	}
 	r.timingMu.Lock()
 	r.eventAt = time.Time{}
 	r.timingMu.Unlock()
 	return false
+}
+
+// DispatchGesture invokes a native gesture callback by ID.
+func (r *Runtime) DispatchGesture(id ui.HandlerID, event ui.GestureEvent) bool {
+	r.timingMu.Lock()
+	r.eventAt = time.Now()
+	r.timingMu.Unlock()
+	if r.events.DispatchGesture(id, event) {
+		return true
+	}
+	r.timingMu.Lock()
+	r.eventAt = time.Time{}
+	r.timingMu.Unlock()
+	return false
+}
+
+// LogEntries returns a copy of the bounded structured runtime log.
+func (r *Runtime) LogEntries() []LogEntry { return r.diagnostics.Entries() }
+
+// ClearLogEntries clears accumulated diagnostic events.
+func (r *Runtime) ClearLogEntries() { r.diagnostics.Clear() }
+
+// TreeSnapshot returns a detached snapshot of the last rendered tree.
+func (r *Runtime) TreeSnapshot() TreeSnapshot {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return SnapshotTree(r.tree)
 }
 
 // RecordNativeApply records completion timing reported by a platform renderer.
@@ -125,10 +187,12 @@ func (r *Runtime) render() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.stopped {
+		r.diagnostics.Record(LogEntry{Kind: LogRenderSkipped, Message: "runtime stopped"})
 		return nil
 	}
 	component := r.app()
 	if component == nil {
+		r.diagnostics.Record(LogEntry{Kind: LogRenderSkipped, Message: "nil component"})
 		return nil
 	}
 	next := component.Build()
@@ -148,8 +212,10 @@ func (r *Runtime) render() error {
 			r.timingMu.Lock()
 			delete(r.pending, batch.Sequence)
 			r.timingMu.Unlock()
+			r.diagnostics.Record(LogEntry{Kind: LogRenderFailed, Sequence: batch.Sequence, MutationCount: len(batch.Mutations), Message: err.Error()})
 			return err
 		}
+		r.diagnostics.Record(LogEntry{Kind: LogBatchApplied, Sequence: batch.Sequence, MutationCount: len(batch.Mutations)})
 	}
 	r.releaseRemovedHandlers(r.tree, next)
 	r.tree = next
@@ -192,6 +258,23 @@ func stabilizeDescendants(oldNode, newNode *ui.Node) {
 }
 
 func (r *Runtime) bindHandlers(oldNode, n *ui.Node) {
+	oldGestureIDs := []ui.HandlerID(nil)
+	if oldNode != nil && oldNode.Type == n.Type {
+		oldGestureIDs = oldNode.GestureHandlerIDs
+	}
+	n.GestureHandlerIDs = make([]ui.HandlerID, len(n.Intents.Gestures))
+	for i, intent := range n.Intents.Gestures {
+		if i < len(oldGestureIDs) && oldGestureIDs[i] != 0 {
+			n.GestureHandlerIDs[i] = oldGestureIDs[i]
+			r.events.ReplaceGesture(oldGestureIDs[i], intent.Handler)
+		} else {
+			n.GestureHandlerIDs[i] = r.events.RegisterGesture(intent.Handler)
+		}
+	}
+	for i := len(n.Intents.Gestures); i < len(oldGestureIDs); i++ {
+		r.events.Release(oldGestureIDs[i])
+	}
+	n.Props.Interactions = marshalInteractions(n.Intents, n.GestureHandlerIDs)
 	if n.Type == ui.NodeButton {
 		if fn := n.Press; fn != nil {
 			if oldNode != nil && oldNode.Type == n.Type && oldNode.Props.OnPress != 0 {
@@ -200,6 +283,24 @@ func (r *Runtime) bindHandlers(oldNode, n *ui.Node) {
 			} else {
 				n.Props.OnPress = r.events.Register(fn)
 			}
+		}
+	}
+	if n.Type == ui.NodeTextInput {
+		if fn := n.Change; fn != nil {
+			if oldNode != nil && oldNode.Type == n.Type && oldNode.Props.OnChange != 0 {
+				n.Props.OnChange = oldNode.Props.OnChange
+				r.events.ReplaceValue(n.Props.OnChange, fn)
+			} else {
+				n.Props.OnChange = r.events.RegisterValue(fn)
+			}
+		}
+	}
+	if n.Type == ui.NodeSwitch && n.Toggle != nil {
+		if oldNode != nil && oldNode.Type == n.Type && oldNode.Props.OnToggle != 0 {
+			n.Props.OnToggle = oldNode.Props.OnToggle
+			r.events.ReplaceBool(n.Props.OnToggle, n.Toggle)
+		} else {
+			n.Props.OnToggle = r.events.RegisterBool(n.Toggle)
 		}
 	}
 	oldExplicit := make(map[ui.NodeID]*ui.Node)
@@ -242,6 +343,11 @@ func releaseTree(events *EventRegistry, n *ui.Node) {
 		return
 	}
 	events.Release(n.Props.OnPress)
+	events.Release(n.Props.OnChange)
+	events.Release(n.Props.OnToggle)
+	for _, id := range n.GestureHandlerIDs {
+		events.Release(id)
+	}
 	for _, c := range n.Children {
 		releaseTree(events, c)
 	}

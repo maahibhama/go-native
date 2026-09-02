@@ -48,12 +48,25 @@ Mutation protocol version 2 assigns every runtime batch a sequence number. The i
 
 `Runtime.TimingSamples` exposes completed samples for benchmark harnesses. These hooks do not log in the timed path.
 
+### Reproducible native sampling harness
+
+Run either platform in instrumentation mode:
+
+```bash
+gonative benchmark native ios
+gonative benchmark native android
+```
+
+The harness launches the counter and captures samples for 15 seconds. Tap **Increment** repeatedly while it runs. Set `GONATIVE_BENCHMARK_SECONDS` to change the collection window, `GONATIVE_SIMULATOR` to choose an iOS simulator, or `GONATIVE_ANDROID_SERIAL` to select an Android target. Each stdout line is an independent JSON object with the batch sequence, mutation count, native apply duration, bridge-to-apply duration, and event-to-apply duration, all in nanoseconds. Raw platform logs remain under the corresponding `build` directory.
+
+Timing output is disabled in normal builds and enabled only for these harness builds. Redirect stdout to a JSON Lines file for analysis. The harness deliberately performs no automatic taps: coordinates are layout- and device-dependent and would make cross-device results misleading. Record the device, OS, build mode, collection duration, and interaction method with every result.
+
 ## Native measurements still required
 
 The following need platform harnesses rather than approximation by Go benchmarks:
 
 - automated, repeated Objective-C/UIKit and JNI/Android View samples across batch sizes;
-- automated distributions for native button event to completed label update latency;
+- automated, controlled interaction distributions for native button event to completed label update latency;
 - cold startup, resident memory, and packaged binary contribution;
 - frame pacing for larger update batches.
 
