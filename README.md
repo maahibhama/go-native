@@ -17,6 +17,14 @@ GOCACHE=/tmp/go-native-gocache go test ./...
 GOCACHE=/tmp/go-native-gocache go vet ./...
 ```
 
+Run the portable performance suite with:
+
+```bash
+make benchmark
+```
+
+Results and measurement boundaries are documented in [docs/performance.md](docs/performance.md). Native bridge/application timing is tracked separately from Go-side measurements.
+
 ## CLI
 
 Run the narrow Milestone 0 CLI directly during development:

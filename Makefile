@@ -4,7 +4,7 @@ test:
 vet:
 	GOCACHE=/tmp/go-native-gocache go vet ./...
 benchmark:
-	GOCACHE=/tmp/go-native-gocache go test -bench=. -benchmem ./runtime
+	GOCACHE=/tmp/go-native-gocache go test -run='^$$' -bench=. -benchmem ./runtime
 cli:
 	GOCACHE=/tmp/go-native-gocache go build ./cmd/gonative
 ios:
