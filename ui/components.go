@@ -12,18 +12,23 @@ func Row(children ...Component) *element { return newElement(NodeRow, Props{}, c
 // Text creates a native text label.
 func Text(value string) *element { return newElement(NodeText, Props{Text: value}) }
 
+// TextFunc evaluates value whenever the application rebuilds its virtual tree.
+func TextFunc(value func() string) *element {
+	if value == nil {
+		return Text("")
+	}
+	return Text(value())
+}
+
+// SafeArea creates a container whose children avoid platform system insets.
+func SafeArea(children ...Component) *element { return newElement(NodeSafeArea, Props{}, children...) }
+
 // Button creates a native button. BindHandlers resolves its callback to a stable ID.
 func Button(label string, onPress func()) *element {
 	e := newElement(NodeButton, Props{Text: label})
-	buttonCallbacks.Store(e.node.ID, onPress)
+	e.node.Press = onPress
 	return e
 }
-
-var buttonCallbacks callbackStore
-
-// TakeButtonCallback returns the callback associated with a button node.
-// Runtime uses this during tree binding; applications normally do not call it.
-func TakeButtonCallback(id NodeID) func() { return buttonCallbacks.Load(id) }
 
 func (e *element) Padding(value float32) *element     { e.node.Props.Padding = value; return e }
 func (e *element) Gap(value float32) *element         { e.node.Props.Gap = value; return e }

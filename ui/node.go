@@ -15,6 +15,7 @@ const (
 	NodeButton
 	NodeRow
 	NodeColumn
+	NodeSafeArea
 )
 
 // HandlerID identifies an event callback without passing a Go pointer to native code.
@@ -47,10 +48,15 @@ type Props struct {
 
 // Node is a platform-independent native UI primitive.
 type Node struct {
-	ID       NodeID
-	Type     NodeType
-	Props    Props
-	Children []*Node
+	ID NodeID
+	// ExplicitID is set by WithID. The runtime never replaces explicit identity
+	// during structural stabilization.
+	ExplicitID bool
+	Type       NodeType
+	Props      Props
+	Children   []*Node
+	// Press is Go-owned behavior. It never enters Props or crosses a native boundary.
+	Press func()
 }
 
 // Component builds a virtual UI node.
@@ -91,5 +97,6 @@ func cloneNode(n *Node) *Node {
 func WithID(component Component, id NodeID) Component {
 	n := component.Build()
 	n.ID = id
+	n.ExplicitID = true
 	return &element{node: n}
 }

@@ -59,8 +59,32 @@ func TestReconcileChildOrdering(t *testing.T) {
 	a := node(1, ui.NodeRow, "", node(2, ui.NodeText, "a"), node(3, ui.NodeText, "b"))
 	b := node(1, ui.NodeRow, "", node(3, ui.NodeText, "b"), node(2, ui.NodeText, "a"))
 	got := Reconcile(a, b)
-	if len(got.Mutations) != 2 || got.Mutations[0].Type != MutationMove || got.Mutations[1].Type != MutationMove {
+	if len(got.Mutations) != 1 || got.Mutations[0].Type != MutationMove || got.Mutations[0].NodeID != 3 || got.Mutations[0].FromIndex != 1 || got.Mutations[0].Index != 0 {
 		t.Fatalf("unexpected: %#v", got)
+	}
+}
+
+func TestReconcileComplexOrderingUsesCurrentIndexes(t *testing.T) {
+	a := node(1, ui.NodeRow, "", node(2, ui.NodeText, "a"), node(3, ui.NodeText, "b"), node(4, ui.NodeText, "c"), node(5, ui.NodeText, "d"))
+	b := node(1, ui.NodeRow, "", node(5, ui.NodeText, "d"), node(3, ui.NodeText, "b"), node(6, ui.NodeText, "e"), node(2, ui.NodeText, "a"))
+	batch := Reconcile(a, b)
+	order := []ui.NodeID{2, 3, 4, 5}
+	for _, mutation := range batch.Mutations {
+		switch mutation.Type {
+		case MutationRemove:
+			order = append(order[:mutation.Index], order[mutation.Index+1:]...)
+		case MutationInsert:
+			order = insertID(order, int(mutation.Index), mutation.NodeID)
+		case MutationMove:
+			if order[mutation.FromIndex] != mutation.NodeID {
+				t.Fatalf("move source %d contains %d, expected %d", mutation.FromIndex, order[mutation.FromIndex], mutation.NodeID)
+			}
+			order = moveID(order, int(mutation.FromIndex), int(mutation.Index))
+		}
+	}
+	want := []ui.NodeID{5, 3, 6, 2}
+	if !reflect.DeepEqual(order, want) {
+		t.Fatalf("final order %v, want %v; mutations=%#v", order, want, batch.Mutations)
 	}
 }
 func TestReconcileNestedUpdate(t *testing.T) {

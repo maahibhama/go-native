@@ -29,13 +29,15 @@ The renderer receives complete props on create/update. This slightly enlarges up
 
 ## Identity and reconciliation
 
-For the unkeyed Milestone 0 tree, the runtime preserves identity by matching type and structural position. Explicit `ui.WithID` is available for keyed identity. Reconciliation updates equal-ID/equal-type nodes in place, recursively creates/deletes subtrees, and emits move operations when child order changes. A counter click produces one `MutationUpdate` for the label.
+For unkeyed trees, the runtime preserves identity by matching type and structural position. `ui.WithID` marks explicit identity that survives reordering and also keeps event handlers attached to the logical node. Reconciliation updates equal-ID/equal-type nodes in place, recursively creates/deletes subtrees, and computes moves against the evolving child order so every emitted index is immediately applicable by native renderers. A counter click produces one `MutationUpdate` for the label.
 
 ## Threading and ownership
 
 State is safe to read or update from goroutines. Rendering is serialized and repeated state changes are coalesced while a render is pending. The iOS renderer copies the batch bytes synchronously, then applies the copy on the UIKit main queue. Native callbacks enter Go on the UIKit thread, resolve an integer handler, and schedule rendering; UIKit is never mutated directly from Go application goroutines.
 
-Go owns nodes, state, and callbacks. Objective-C owns UIKit views and action targets. Delete mutations remove native views, and removed virtual subtrees release handler registry entries. The iOS renderer does not retain Go pointers.
+Go owns nodes, state, and callbacks. Objective-C owns UIKit views and action targets. Delete mutations remove native views and node-keyed action targets; removed virtual subtrees release handler registry entries. When the view-controller owner is destroyed, its bridge stops the Go runtime before releasing the remaining native registries. The iOS renderer does not retain Go pointers.
+
+Android uses the same bytes without a second protocol: JNI copies the payload into a Java byte array, Java schedules it with `runOnUiThread`, and a `LongSparseArray<View>` retains native view identity. Go-created threads obtain a thread-local `JNIEnv` from the cached `JavaVM`, attach only when necessary, and detach before exit. Activity destruction stops the runtime, clears the view registry, and deletes the JNI global renderer reference under a mutex. The Java renderer retains no Go pointers.
 
 ## Layout scope
 
@@ -43,4 +45,4 @@ Milestone 0 translates `Row` and `Column` to `UIStackView`, including padding, g
 
 ## Deferred work
 
-Android, keyed-list APIs, native virtualized lists, navigation, text input, animation, gestures, hot reload, and production lifecycle handling are outside Milestone 0. Accessibility currently maps basic labels and button/label semantics to UIKit; the property model can grow without changing tree shape.
+Keyed-list APIs, native virtualized lists, navigation, text input, animation, gestures, hot reload, and production lifecycle handling remain deferred. Accessibility currently maps basic labels and button/label semantics to each native platform; the property model can grow without changing tree shape.
