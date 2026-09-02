@@ -6,7 +6,7 @@ SDK=${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}
 NDK_VERSION=${GONATIVE_NDK_VERSION:-28.2.13676358}
 NDK="$SDK/ndk/$NDK_VERSION"
 if [ ! -d "$NDK" ]; then
-    for d in "$SDK/ndk/"*; do
+    for d in "$SDK/ndk/"* "$SDK/ndk-bundle"; do
         if [ -d "$d" ]; then NDK="$d"; break; fi
     done
 fi
@@ -28,7 +28,12 @@ for abi in $ABIS; do
         *) continue ;;
     esac
     if [ ! -x "$TOOLCHAIN/bin/$compiler" ]; then
+        if [ -f "$BUILD/lib/$abi/libgonative.so" ]; then
+            echo "Using existing pre-built $BUILD/lib/$abi/libgonative.so"
+            continue
+        fi
         echo "Missing Android NDK compiler: $TOOLCHAIN/bin/$compiler" >&2
+        echo "Please set ANDROID_NDK_ROOT or install NDK via Android Studio SDK Manager." >&2
         exit 1
     fi
     mkdir -p "$LIB_BUILD/$abi"

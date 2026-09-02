@@ -1,0 +1,7 @@
+interface:
+  display_name: "Go Native"
+  short_description: "Build and maintain the Go Native framework"
+  default_prompt: "Use $go-native to implement and verify a cross-platform change in this repository."
+
+policy:
+  allow_implicit_invocation: true

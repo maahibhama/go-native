@@ -14,9 +14,9 @@ import (
 	"time"
 	"unsafe"
 
-	"my-project"
 	gnruntime "github.com/go-native/go-native/runtime"
 	"github.com/go-native/go-native/ui"
+	"my-project"
 )
 
 var benchmarkOutput string
