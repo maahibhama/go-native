@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"github.com/go-native/go-native/ui"
 	"sync"
 	"testing"
@@ -242,5 +243,45 @@ func TestContextRuntimeRebuildsForEnvironment(t *testing.T) {
 	last := renderer.batches[len(renderer.batches)-1]
 	if len(last.Mutations) != 1 || last.Mutations[0].Props.Text != "fr" {
 		t.Fatalf("last batch = %#v", last)
+	}
+}
+
+func TestRuntimeOwnsHookStateAndEffectCleanup(t *testing.T) {
+	renderer := &recordingRenderer{}
+	var count *ui.State[int]
+	effectRuns, cleanups := 0, 0
+	r := NewContext(func(ui.BuildContext) ui.Component {
+		return ui.Functional("root", func(ctx ui.BuildContext) ui.Component {
+			count = ui.UseState(ctx, 0)
+			ui.UseEffect(ctx, func(context.Context) ui.Cleanup {
+				effectRuns++
+				return func() { cleanups++ }
+			}, "once")
+			return ui.Text(string(rune('0' + count.Get())))
+		})
+	}, renderer, ui.DefaultEnvironment())
+	if err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if effectRuns != 1 || count == nil {
+		t.Fatalf("effectRuns=%d count=%v", effectRuns, count)
+	}
+	count.Set(1)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		renderer.mu.Lock()
+		batches := len(renderer.batches)
+		renderer.mu.Unlock()
+		if batches >= 2 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if effectRuns != 1 {
+		t.Fatalf("stable effect reran %d times", effectRuns)
+	}
+	r.Stop()
+	if cleanups != 1 {
+		t.Fatalf("cleanups = %d", cleanups)
 	}
 }

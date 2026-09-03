@@ -103,6 +103,7 @@ func DefaultEnvironment() Environment {
 type BuildContext struct {
 	Environment Environment
 	Path        string
+	hooks       *HookRegistry
 }
 
 func NewBuildContext(environment Environment) BuildContext {
@@ -119,6 +120,10 @@ func (c BuildContext) WithEnvironment(environment Environment) BuildContext {
 	c.Environment = environment
 	return c
 }
+
+// WithHooks attaches mounted hook storage. It is used by runtimes and custom
+// render hosts; application components normally receive an already configured context.
+func (c BuildContext) WithHooks(hooks *HookRegistry) BuildContext { c.hooks = hooks; return c }
 
 // ContextComponent is the production component contract. The legacy Component
 // contract remains supported during v0 migration.

@@ -32,9 +32,13 @@ func NavigationStack(routes ...Route) Component {
 }
 
 func (c *navigationComponent) Build() *Node {
+	return c.BuildContext(NewBuildContext(DefaultEnvironment()))
+}
+
+func (c *navigationComponent) BuildContext(context BuildContext) *Node {
 	for i := len(c.intent.Routes) - 1; i >= 0; i-- {
 		if content := c.intent.Routes[i].Content; content != nil {
-			return content.Build()
+			return BuildWithContext(content, context.Child("route:"+c.intent.Routes[i].Key))
 		}
 	}
 	return nil
@@ -95,10 +99,14 @@ func PresentModal(base Component, intent ModalIntent) Component {
 }
 
 func (c *modalComponent) Build() *Node {
+	return c.BuildContext(NewBuildContext(DefaultEnvironment()))
+}
+
+func (c *modalComponent) BuildContext(context BuildContext) *Node {
 	if c.base == nil {
 		return nil
 	}
-	return c.base.Build()
+	return BuildWithContext(c.base, context.Child("modal-base"))
 }
 
 func (c *modalComponent) ModalIntent() (ModalIntent, bool) { return c.intent, c.intent.Content != nil }

@@ -24,23 +24,36 @@ func schedule() {
 
 // State is a thread-safe observable value.
 type State[T any] struct {
-	mu    sync.RWMutex
-	value T
+	mu        sync.RWMutex
+	value     T
+	scheduler Scheduler
 }
 
 // NewState creates state with an initial value.
 func NewState[T any](value T) *State[T] { return &State[T]{value: value} }
 
+func newScheduledState[T any](value T, scheduler Scheduler) *State[T] {
+	return &State[T]{value: value, scheduler: scheduler}
+}
+
 // Get returns the current value.
 func (s *State[T]) Get() T { s.mu.RLock(); defer s.mu.RUnlock(); return s.value }
 
 // Set replaces the value and schedules a rendering pass.
-func (s *State[T]) Set(value T) { s.mu.Lock(); s.value = value; s.mu.Unlock(); schedule() }
+func (s *State[T]) Set(value T) { s.mu.Lock(); s.value = value; s.mu.Unlock(); s.schedule() }
 
 // Update atomically replaces the value using update and schedules a rendering pass.
 func (s *State[T]) Update(update func(T) T) {
 	s.mu.Lock()
 	s.value = update(s.value)
 	s.mu.Unlock()
+	s.schedule()
+}
+
+func (s *State[T]) schedule() {
+	if s.scheduler != nil {
+		s.scheduler.Schedule()
+		return
+	}
 	schedule()
 }

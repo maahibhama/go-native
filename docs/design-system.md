@@ -26,7 +26,14 @@ Legacy applications continue to use `runtime.New(func() ui.Component, renderer)`
 
 Runtime environment updates are immutable replacements and schedule a coalesced render. Lifecycle changes use `Runtime.SetLifecycle`. Components implementing `ui.ContextComponent` receive context even when hosted by a legacy component tree.
 
+## Mounted components and hooks
+
+`ui.Functional(key, render)` creates a mounted component scope. The key and its structural parent path define hook identity, so keys must remain stable among siblings. Child components are built lazily with their inherited `BuildContext`; keyed wrappers, interaction decorators, navigation fallbacks, and modal bases preserve that context.
+
+The initial hook set is `UseState`, `UseReducer`, `UseRef`, `UseMemo`, `UseCallback`, `UseEffect`, `UseLayoutEffect`, `UseLifecycle`, and `UseMediaQuery`. Go requires the active `BuildContext` as the first hook argument. Hooks must be called unconditionally and in the same order on every render.
+
+State created by a hook schedules only its owning runtime. Effects run after a successful renderer commit, with layout effects first. A changed dependency cancels the prior effect context and runs cleanup before replacement. Removed mounted scopes and `Runtime.Stop` cancel and clean up all effects deterministically.
+
 ## Current layout coverage
 
 The Go layout engine supports intrinsic leaf measurement, logical-point and percentage dimensions, minimum and maximum constraints, padding, margins, gaps, row and column flow, cross-axis alignment, and absolute overlays. Flex growth/shrink, wrapping, aspect ratio enforcement, grids, RTL mirroring, and native measurement batching remain subsequent v0.2 work.
-

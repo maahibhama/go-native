@@ -31,6 +31,7 @@ type Runtime struct {
 	diagnostics *Diagnostics
 	environment ui.Environment
 	contextApp  ContextApp
+	hooks       *ui.HookRegistry
 }
 
 type pendingTiming struct {
@@ -43,12 +44,16 @@ const timingHistoryLimit uint64 = 1024
 
 // New creates an application runtime.
 func New(app App, renderer Renderer) *Runtime {
-	return &Runtime{app: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming), diagnostics: NewDiagnostics(), environment: ui.DefaultEnvironment()}
+	runtime := &Runtime{app: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming), diagnostics: NewDiagnostics(), environment: ui.DefaultEnvironment()}
+	runtime.hooks = ui.NewHookRegistry(runtime)
+	return runtime
 }
 
 // NewContext creates a runtime using the context-aware application contract.
 func NewContext(app ContextApp, renderer Renderer, environment ui.Environment) *Runtime {
-	return &Runtime{contextApp: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming), diagnostics: NewDiagnostics(), environment: environment}
+	runtime := &Runtime{contextApp: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming), diagnostics: NewDiagnostics(), environment: environment}
+	runtime.hooks = ui.NewHookRegistry(runtime)
+	return runtime
 }
 
 // Environment returns the current immutable application environment snapshot.
@@ -99,6 +104,7 @@ func (r *Runtime) Stop() {
 	releaseTree(r.events, r.tree)
 	r.tree = nil
 	r.mu.Unlock()
+	r.hooks.Dispose()
 	ui.SetScheduler(nil)
 	r.diagnostics.Record(LogEntry{Kind: LogRuntimeStopped})
 }
@@ -222,20 +228,23 @@ func elapsedIfSet(now, start time.Time) time.Duration {
 
 func (r *Runtime) render() error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.stopped {
 		r.diagnostics.Record(LogEntry{Kind: LogRenderSkipped, Message: "runtime stopped"})
+		r.mu.Unlock()
 		return nil
 	}
+	r.hooks.BeginRender()
 	var component ui.Component
-	context := ui.NewBuildContext(r.environment)
+	context := ui.NewBuildContext(r.environment).WithHooks(r.hooks)
 	if r.contextApp != nil {
 		component = r.contextApp(context)
 	} else if r.app != nil {
 		component = r.app()
 	}
 	if component == nil {
+		r.hooks.AbortRender()
 		r.diagnostics.Record(LogEntry{Kind: LogRenderSkipped, Message: "nil component"})
+		r.mu.Unlock()
 		return nil
 	}
 	next := ui.BuildWithContext(component, context)
@@ -256,12 +265,16 @@ func (r *Runtime) render() error {
 			delete(r.pending, batch.Sequence)
 			r.timingMu.Unlock()
 			r.diagnostics.Record(LogEntry{Kind: LogRenderFailed, Sequence: batch.Sequence, MutationCount: len(batch.Mutations), Message: err.Error()})
+			r.hooks.AbortRender()
+			r.mu.Unlock()
 			return err
 		}
 		r.diagnostics.Record(LogEntry{Kind: LogBatchApplied, Sequence: batch.Sequence, MutationCount: len(batch.Mutations)})
 	}
 	r.releaseRemovedHandlers(r.tree, next)
 	r.tree = next
+	r.mu.Unlock()
+	r.hooks.CommitRender()
 	return nil
 }
 

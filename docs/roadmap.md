@@ -10,7 +10,7 @@ An item is complete only when it has tests, relevant documentation, successful i
 - [x] Protocol-v7 compatibility projection for existing component modifiers
 - [x] Deterministic headless mutation renderer
 - [x] Initial Go-owned constraint layout engine and intrinsic measurement interface
-- [ ] Mounted element tree and component-scoped hooks
+- [x] Mounted component paths and component-scoped state, reducer, ref, memo, callback, effect, lifecycle, and media hooks
 - [ ] Flex growth/shrink, wrapping, aspect ratio, grid, and RTL layout
 - [ ] Batched native intrinsic measurement and typed mutation protocol
 - [ ] Focus tree and lifecycle callbacks wired from both native hosts

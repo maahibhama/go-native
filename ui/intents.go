@@ -103,7 +103,14 @@ type intentComponent struct {
 }
 
 func (c *intentComponent) Build() *Node {
-	n := c.component.Build()
+	return c.BuildContext(NewBuildContext(DefaultEnvironment()))
+}
+
+func (c *intentComponent) BuildContext(context BuildContext) *Node {
+	n := BuildWithContext(c.component, context)
+	if n == nil {
+		return nil
+	}
 	n.Intents = cloneIntents(c.intents)
 	return n
 }

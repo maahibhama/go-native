@@ -1,7 +1,10 @@
 // Package ui defines the platform-independent declarative UI tree.
 package ui
 
-import "sync/atomic"
+import (
+	"strconv"
+	"sync/atomic"
+)
 
 // NodeID identifies a virtual node and its corresponding native view.
 type NodeID uint64
@@ -110,9 +113,27 @@ type Component interface {
 	Build() *Node
 }
 
-type element struct{ node *Node }
+type element struct {
+	node     *Node
+	children []Component
+}
 
-func (e *element) Build() *Node { return cloneNode(e.node) }
+func (e *element) Build() *Node { return e.BuildContext(NewBuildContext(DefaultEnvironment())) }
+
+func (e *element) BuildContext(context BuildContext) *Node {
+	n := cloneNode(e.node)
+	n.Children = make([]*Node, 0, len(e.children))
+	for index, child := range e.children {
+		if child == nil {
+			continue
+		}
+		built := BuildWithContext(child, context.Child(strconv.Itoa(index)))
+		if built != nil {
+			n.Children = append(n.Children, built)
+		}
+	}
+	return n
+}
 
 var nextNodeID atomic.Uint64
 
@@ -121,13 +142,7 @@ func newElement(kind NodeType, props Props, children ...Component) *element {
 	if kind == NodeRow {
 		n.Style.Layout.Direction = FlexRow
 	}
-	n.Children = make([]*Node, 0, len(children))
-	for _, child := range children {
-		if child != nil {
-			n.Children = append(n.Children, child.Build())
-		}
-	}
-	return &element{node: n}
+	return &element{node: n, children: append([]Component(nil), children...)}
 }
 
 func cloneNode(n *Node) *Node {
@@ -146,8 +161,26 @@ func cloneNode(n *Node) *Node {
 
 // WithID assigns an explicit stable identity. It is primarily useful for keyed children.
 func WithID(component Component, id NodeID) Component {
-	n := component.Build()
-	n.ID = id
-	n.ExplicitID = true
-	return &element{node: n}
+	return &identifiedComponent{component: component, id: id}
+}
+
+type identifiedComponent struct {
+	component Component
+	id        NodeID
+}
+
+func (c *identifiedComponent) Build() *Node {
+	return c.BuildContext(NewBuildContext(DefaultEnvironment()))
+}
+
+func (c *identifiedComponent) BuildContext(context BuildContext) *Node {
+	if c == nil || c.component == nil {
+		return nil
+	}
+	n := BuildWithContext(c.component, context.Child("key:"+strconv.FormatUint(uint64(c.id), 10)))
+	if n != nil {
+		n.ID = c.id
+		n.ExplicitID = true
+	}
+	return n
 }
