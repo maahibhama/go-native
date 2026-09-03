@@ -103,6 +103,8 @@ func renderDashboardScreen() ui.Component {
 				ui.ProgressIndicator(1.0).Width(240),
 			).Padding(16).Gap(8).Align(ui.AlignCenter),
 
+			layoutSystemExample(),
+
 			ui.Button("Sign Out", func() {
 				isLoggedIn.Set(false)
 				password.Set("")
@@ -110,4 +112,42 @@ func renderDashboardScreen() ui.Component {
 			}).Width(220).Height(44).FontSize(15).Bold(),
 		).Padding(24).Gap(18).Align(ui.AlignCenter),
 	).Align(ui.AlignCenter)
+}
+
+// layoutSystemExample demonstrates the production layout API. The explicit
+// sizes retain protocol-v7 native compatibility while Go-owned layout tests use
+// the flex, aspect-ratio, adaptive-grid, RTL, and responsive metadata.
+func layoutSystemExample() ui.Component {
+	return ui.Functional("layout-system-example", func(ctx ui.BuildContext) ui.Component {
+		style := ui.ResponsiveStyle(ui.UseMediaQuery(ctx),
+			ui.Style{Layout: ui.LayoutStyle{GridColumns: 2}},
+			ui.Breakpoint{MinWidth: 600, Style: ui.Style{Layout: ui.LayoutStyle{GridColumns: 3}}},
+		)
+		cards := ui.Column(
+			ui.Row(
+				layoutCard("Flex", "grow / shrink / basis", 0),
+				layoutCard("Grid", "adaptive columns", 0),
+			).Width(280).Gap(8).Align(ui.AlignCenter),
+			ui.Row(
+				layoutCard("Direction", "LTR / RTL", 0),
+				layoutCard("Ratio", "16:9 media", 16.0/9.0),
+			).Width(280).Gap(8).Align(ui.AlignCenter),
+		).Width(280).Gap(8).Styled(ui.Style{Layout: ui.LayoutStyle{
+			GridColumns:        style.Layout.GridColumns,
+			GridMinColumnWidth: 120,
+			Wrap:               ui.Wrap,
+		}})
+		return ui.Column(
+			ui.Text("Responsive layout system").FontSize(16).Bold(),
+			cards,
+		).Gap(8).Align(ui.AlignCenter)
+	})
+}
+
+func layoutCard(title, detail string, ratio float32) ui.Component {
+	card := ui.Column(ui.Text(title).Bold(), ui.Text(detail).FontSize(12)).Width(136).Height(72).Padding(8).Gap(4).Flex(1, 1)
+	if ratio > 0 {
+		card.AspectRatio(ratio)
+	}
+	return card
 }

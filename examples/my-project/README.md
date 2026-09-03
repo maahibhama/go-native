@@ -2,6 +2,8 @@
 
 A Go Native application. The UI is declared in app.go and renders genuine platform-native controls on iOS and Android.
 
+After signing in, the dashboard includes a production-layout API example covering mounted hooks, responsive breakpoints, flex metadata, adaptive grid columns, aspect ratio, and logical LTR/RTL layout.
+
 ## Project Map
 - app.go: Declarative UI tree written in Go.
 - ios/: Native iOS host project (UIKit, Xcode-compatible).

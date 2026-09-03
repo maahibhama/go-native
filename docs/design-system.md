@@ -36,4 +36,8 @@ State created by a hook schedules only its owning runtime. Effects run after a s
 
 ## Current layout coverage
 
-The Go layout engine supports intrinsic leaf measurement, logical-point and percentage dimensions, minimum and maximum constraints, padding, margins, gaps, row and column flow, cross-axis alignment, and absolute overlays. Flex growth/shrink, wrapping, aspect ratio enforcement, grids, RTL mirroring, and native measurement batching remain subsequent v0.2 work.
+The Go layout engine supports intrinsic leaf measurement, logical-point and percentage dimensions, minimum and maximum constraints, padding, margins, gaps, row and column flow, cross-axis alignment, absolute overlays, flex grow/shrink/basis, wrapping, aspect ratios, fixed and adaptive grids, and RTL mirroring.
+
+Use `ui.Grid(columns, children...)` for fixed tracks or `AdaptiveGrid(minColumnWidth)` for viewport-derived columns. `ui.ResponsiveStyle` applies ordered minimum-width `ui.Breakpoint` overrides using `MediaQuery.Viewport`. `runtime/layout.Engine.Direction` controls logical RTL placement without changing the component tree.
+
+These advanced fields remain Go-owned metadata under protocol v7. Native measurement batching and the typed layout mutation protocol are separate v0.2 milestones.

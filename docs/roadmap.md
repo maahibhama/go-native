@@ -11,7 +11,7 @@ An item is complete only when it has tests, relevant documentation, successful i
 - [x] Deterministic headless mutation renderer
 - [x] Initial Go-owned constraint layout engine and intrinsic measurement interface
 - [x] Mounted component paths and component-scoped state, reducer, ref, memo, callback, effect, lifecycle, and media hooks
-- [ ] Flex growth/shrink, wrapping, aspect ratio, grid, and RTL layout
+- [x] Flex growth/shrink/basis, wrapping, aspect ratio, adaptive grid, RTL, and responsive breakpoint layout
 - [ ] Batched native intrinsic measurement and typed mutation protocol
 - [ ] Focus tree and lifecycle callbacks wired from both native hosts
 

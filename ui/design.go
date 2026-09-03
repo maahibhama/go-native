@@ -111,6 +111,8 @@ type LayoutStyle struct {
 	Position            PositionMode
 	Inset               EdgeInsets
 	Overflow            Overflow
+	GridColumns         int
+	GridMinColumnWidth  float32
 }
 
 type AppearanceStyle struct {
@@ -206,6 +208,12 @@ func (s Style) Merge(override Style) Style {
 	if override.Layout.Overflow != 0 {
 		s.Layout.Overflow = override.Layout.Overflow
 	}
+	if override.Layout.GridColumns != 0 {
+		s.Layout.GridColumns = override.Layout.GridColumns
+	}
+	if override.Layout.GridMinColumnWidth != 0 {
+		s.Layout.GridMinColumnWidth = override.Layout.GridMinColumnWidth
+	}
 	if override.Appearance != (AppearanceStyle{}) {
 		s.Appearance = override.Appearance
 	}
@@ -266,3 +274,20 @@ func DefaultTheme() Theme {
 
 // PlatformStyle is applied after portable style resolution.
 type PlatformStyle struct{ IOS, Android Style }
+
+// Breakpoint applies Style when the viewport is at least MinWidth points wide.
+type Breakpoint struct {
+	MinWidth float32
+	Style    Style
+}
+
+// ResponsiveStyle resolves breakpoints in declaration order after base style.
+func ResponsiveStyle(media MediaQuery, base Style, breakpoints ...Breakpoint) Style {
+	resolved := base
+	for _, breakpoint := range breakpoints {
+		if media.Viewport.Width >= breakpoint.MinWidth {
+			resolved = resolved.Merge(breakpoint.Style)
+		}
+	}
+	return resolved
+}

@@ -9,6 +9,16 @@ func Column(children ...Component) *element { return newElement(NodeColumn, Prop
 // Row creates a horizontal native container.
 func Row(children ...Component) *element { return newElement(NodeRow, Props{}, children...) }
 
+// Grid creates a native container whose Go-owned layout uses equal-width columns.
+func Grid(columns int, children ...Component) *element {
+	if columns < 1 {
+		columns = 1
+	}
+	e := newElement(NodeView, Props{}, children...)
+	e.node.Style.Layout.GridColumns = columns
+	return e
+}
+
 // Text creates a native text label.
 func Text(value string) *element { return newElement(NodeText, Props{Text: value}) }
 
@@ -95,6 +105,31 @@ func (e *element) Height(value float32) *element {
 func (e *element) Align(value AxisAlignment) *element {
 	e.node.Props.Alignment = value
 	e.node.Style.Layout.Alignment = value
+	return e
+}
+func (e *element) Flex(grow, shrink float32) *element {
+	e.node.Style.Layout.FlexGrow = grow
+	e.node.Style.Layout.FlexShrink = shrink
+	return e
+}
+func (e *element) FlexBasis(value Length) *element {
+	e.node.Style.Layout.FlexBasis = value
+	return e
+}
+func (e *element) Wrap() *element { e.node.Style.Layout.Wrap = Wrap; return e }
+func (e *element) AspectRatio(value float32) *element {
+	e.node.Style.Layout.AspectRatio = value
+	return e
+}
+func (e *element) GridColumns(count int) *element {
+	if count < 1 {
+		count = 1
+	}
+	e.node.Style.Layout.GridColumns = count
+	return e
+}
+func (e *element) AdaptiveGrid(minColumnWidth float32) *element {
+	e.node.Style.Layout.GridMinColumnWidth = minColumnWidth
 	return e
 }
 func (e *element) FontSize(value float32) *element {

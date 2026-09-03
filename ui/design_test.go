@@ -47,3 +47,14 @@ func TestStyleMergeOverridesPortableValues(t *testing.T) {
 		t.Fatalf("merged style = %#v", got)
 	}
 }
+
+func TestResponsiveStyleAppliesMatchingBreakpointsInOrder(t *testing.T) {
+	base := Style{Layout: LayoutStyle{Gap: 8, GridColumns: 1}}
+	resolved := ResponsiveStyle(MediaQuery{Viewport: Size{Width: 900}}, base,
+		Breakpoint{MinWidth: 600, Style: Style{Layout: LayoutStyle{Gap: 16, GridColumns: 2}}},
+		Breakpoint{MinWidth: 840, Style: Style{Layout: LayoutStyle{GridColumns: 3}}},
+	)
+	if resolved.Layout.Gap != 16 || resolved.Layout.GridColumns != 3 {
+		t.Fatalf("resolved = %#v", resolved.Layout)
+	}
+}
