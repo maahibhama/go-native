@@ -104,7 +104,7 @@ public final class MainActivity extends Activity {
             long started = System.nanoTime();
             ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
             if (in.remaining() < 14) return;
-            if (Short.toUnsignedInt(in.getShort()) != 7) return;
+            if (Short.toUnsignedInt(in.getShort()) != 8) return;
             int count = in.getInt();
             long sequence = in.getLong();
             for (int operation = 0; operation < count && in.hasRemaining(); operation++) {
@@ -138,6 +138,10 @@ public final class MainActivity extends Activity {
                 int interactionLength = in.remaining() >= 4 ? in.getInt() : 0;
                 byte[] interactions = new byte[Math.max(0, Math.min(interactionLength, in.remaining()))];
                 if (interactions.length > 0) in.get(interactions);
+                int styleLength = in.remaining() >= 4 ? in.getInt() : -1;
+                if (styleLength < 0 || styleLength > 1048576 || styleLength > in.remaining()) return;
+                byte[] typedStyle = new byte[styleLength];
+                in.get(typedStyle);
                 View view = views.get(nodeID);
 
                 if (mutation == CREATE) {
@@ -145,6 +149,7 @@ public final class MainActivity extends Activity {
                     view.setTag(nodeID);
                     views.put(nodeID, view);
                     style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
+                    applyTypedStyle(view, typedStyle);
                     applyInteractions(nodeID, view, interactions);
                     if (views.size() == 1) {
                         view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -154,6 +159,7 @@ public final class MainActivity extends Activity {
                 } else if (mutation == UPDATE) {
                     if (view != null) {
                         style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
+                        applyTypedStyle(view, typedStyle);
                         applyInteractions(nodeID, view, interactions);
                     }
                 } else if (mutation == INSERT) {
@@ -228,6 +234,32 @@ public final class MainActivity extends Activity {
         layout.setOrientation(kind == ROW ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         if (kind == SAFE_AREA) layout.setFitsSystemWindows(true);
         return layout;
+    }
+
+    private void applyTypedStyle(View view, byte[] payload) {
+        if (view == null || payload == null || payload.length < 187) return;
+        ByteBuffer style = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        if (Short.toUnsignedInt(style.getShort(0)) != 1) return;
+        int background = rgba(style, 114), foreground = rgba(style, 118);
+        float borderWidth = style.getFloat(122), cornerRadius = style.getFloat(130), opacity = style.getFloat(158);
+        int borderColor = rgba(style, 126), visibility = Byte.toUnsignedInt(style.get(182));
+        int fontLength = style.getInt(183), disabledOffset = 205 + fontLength;
+        if (fontLength < 0 || disabledOffset >= payload.length) return;
+        if (android.graphics.Color.alpha(background) > 0 || borderWidth > 0) {
+            android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
+            drawable.setColor(background);
+            if (cornerRadius > 0) drawable.setCornerRadius(dp(cornerRadius));
+            if (borderWidth > 0) drawable.setStroke(dp(borderWidth), borderColor);
+            view.setBackground(drawable);
+        }
+        if (view instanceof TextView && android.graphics.Color.alpha(foreground) > 0) ((TextView) view).setTextColor(foreground);
+        if (opacity > 0) view.setAlpha(Math.min(1f, opacity));
+        view.setVisibility(visibility == 2 ? View.GONE : visibility == 1 ? View.INVISIBLE : View.VISIBLE);
+        view.setEnabled(style.get(disabledOffset) == 0);
+    }
+
+    private int rgba(ByteBuffer style, int offset) {
+        return android.graphics.Color.argb(Byte.toUnsignedInt(style.get(offset + 3)), Byte.toUnsignedInt(style.get(offset)), Byte.toUnsignedInt(style.get(offset + 1)), Byte.toUnsignedInt(style.get(offset + 2)));
     }
 
     private void style(View view, int kind, String text, float width, float height, float padding,

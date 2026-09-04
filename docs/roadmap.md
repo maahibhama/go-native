@@ -13,6 +13,12 @@ An item is complete only when it has tests, relevant documentation, successful i
 - [x] Mounted component paths and component-scoped state, reducer, ref, memo, callback, effect, lifecycle, and media hooks
 - [x] Flex growth/shrink/basis, wrapping, aspect ratio, adaptive grid, RTL, and responsive breakpoint layout
 - [ ] Batched native intrinsic measurement and typed mutation protocol
+  - [x] Value-only measurement batch API, result validation, and content/style/constraint cache
+  - [x] Protocol capability negotiation and bounded decoder allocations
+  - [x] Versioned, fixed-width typed-style record with portable/iOS/Android overrides and golden fixture
+  - [x] Protocol v8 mutation integration with bounded UIKit/Android/template/example readers
+  - [x] Portable native background/foreground, border, radius, opacity, visibility, and disabled styling
+  - [ ] Platform override merging, typography/transforms/shadows, computed geometry, and native measurement adapters
 - [ ] Focus tree and lifecycle callbacks wired from both native hosts
 
 ## Foundation

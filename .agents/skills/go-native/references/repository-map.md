@@ -17,7 +17,7 @@ Public API additions need package tests and an assessment of whether they change
 - `runtime/reconciler.go`: create/delete/update/insert/remove/move ordering.
 - `runtime/runtime.go`: rendering lifecycle, ID stabilization, handler reuse/release, diagnostics and timing.
 - `runtime/events.go`: typed callback registries.
-- `runtime/protocol.go`: outer mutation-batch wire format, currently version 7.
+- `runtime/protocol.go`: outer mutation-batch wire format, currently version 8.
 - `runtime/interactions.go`: inner gesture/animation wire payload.
 - `runtime/diagnostics.go`: bounded structured logs and detached snapshots.
 - `runtime/inspector/service.go`: loopback HTTP exposure of logs/tree.

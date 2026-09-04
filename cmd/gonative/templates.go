@@ -613,6 +613,19 @@ static void GNStyle(uint64_t nodeID, UIView *view, GNNode kind, NSString *text, 
 
 static UIView *GNMake(GNNode kind){UIView*v;if(kind==GNText){UILabel*l=[UILabel new];l.numberOfLines=0;l.textColor=UIColor.labelColor;v=l;}else if(kind==GNButton){UIButton*b=[UIButton buttonWithType:UIButtonTypeSystem];v=b;}else if(kind==GNTextInput){UITextField*f=[UITextField new];f.borderStyle=UITextBorderStyleRoundedRect;v=f;}else if(kind==GNSwitch){v=[UISwitch new];}else if(kind==GNProgressIndicator){v=[[UIProgressView alloc]initWithProgressViewStyle:UIProgressViewStyleDefault];}else if(kind==GNImage){v=[UIImageView new];}else if(kind==GNScrollView){v=[UIScrollView new];}else if(kind==GNRow||kind==GNColumn){UIStackView*s=[UIStackView new];s.axis=kind==GNRow?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;v=s;}else if(kind==GNSafeArea){v=[GNSafeAreaView new];v.backgroundColor=UIColor.systemBackgroundColor;}else{v=[UIView new];v.backgroundColor=UIColor.systemBackgroundColor;}v.translatesAutoresizingMaskIntoConstraints=NO;return v;}
 
+static UIColor *GNColor(const uint8_t *p){return [UIColor colorWithRed:p[0]/255.0 green:p[1]/255.0 blue:p[2]/255.0 alpha:p[3]/255.0];}
+static void GNApplyTypedStyle(UIView *view, NSData *payload){
+    if(!view||payload.length<187)return;const uint8_t*p=payload.bytes;uint16_t version=0;memcpy(&version,p,2);if(version!=1)return;
+    float borderWidth=0,cornerRadius=0,opacity=0;memcpy(&borderWidth,p+122,4);memcpy(&cornerRadius,p+130,4);memcpy(&opacity,p+158,4);
+    if(p[117]>0)view.backgroundColor=GNColor(p+114);
+    if([view isKindOfClass:UILabel.class]&&p[121]>0)((UILabel*)view).textColor=GNColor(p+118);
+    if([view isKindOfClass:UIButton.class]&&p[121]>0)[((UIButton*)view) setTitleColor:GNColor(p+118) forState:UIControlStateNormal];
+    if(borderWidth>0){view.layer.borderWidth=borderWidth;view.layer.borderColor=GNColor(p+126).CGColor;}
+    if(cornerRadius>0){view.layer.cornerRadius=cornerRadius;view.clipsToBounds=YES;}
+    if(opacity>0)view.alpha=MIN(1,opacity);view.hidden=p[182]!=0;
+    uint32_t fontLength=0;memcpy(&fontLength,p+183,4);NSUInteger disabledOffset=205+(NSUInteger)fontLength;if(disabledOffset<payload.length)view.userInteractionEnabled=p[disabledOffset]==0;
+}
+
 static void GNConstrainSafeAreaChild(GNSafeAreaView *parent, UIView *view) {
     UILayoutGuide *guide=parent.safeAreaLayoutGuide;
     NSMutableArray<NSLayoutConstraint *> *constraints=[NSMutableArray arrayWithArray:@[[view.leadingAnchor constraintGreaterThanOrEqualToAnchor:guide.leadingAnchor],[view.trailingAnchor constraintLessThanOrEqualToAnchor:guide.trailingAnchor],[view.topAnchor constraintGreaterThanOrEqualToAnchor:guide.topAnchor],[view.bottomAnchor constraintLessThanOrEqualToAnchor:guide.bottomAnchor]]];
@@ -622,7 +635,7 @@ static void GNConstrainSafeAreaChild(GNSafeAreaView *parent, UIView *view) {
     [NSLayoutConstraint activateConstraints:constraints];
 }
 
-static void GNApply(NSData *data){uint64_t started=GNNowNanos();GNReader r={(const uint8_t*)data.bytes,(const uint8_t*)data.bytes+data.length};if(u16(&r)!=7)return;uint32_t count=u32(&r);uint64_t sequence=u64(&r);for(uint32_t op=0;op<count;op++){GNMutation mutation=(GNMutation)u8(&r);GNNode kind=(GNNode)u8(&r);uint64_t nodeID=u64(&r),parentID=u64(&r);int32_t index=i32(&r),from=i32(&r);float width=f32(&r),height=f32(&r),padding=f32(&r),gap=f32(&r);uint8_t alignment=u8(&r);BOOL bold=u8(&r);float fontSize=f32(&r);uint64_t handler=u64(&r),changeHandler=u64(&r),toggleHandler=u64(&r);BOOL checked=u8(&r);float progress=f32(&r);NSString*text=str(&r);NSString*accessibility=str(&r);NSString*hint=str(&r);uint8_t role=u8(&r);BOOL focused=u8(&r);BOOL scalesText=u8(&r);NSString*imageSource=str(&r);uint8_t imageMode=u8(&r);BOOL horizontal=u8(&r);uint32_t interactionLength=u32(&r);NSData *interactions;if(r.p+interactionLength<=r.end){interactions=[NSData dataWithBytes:r.p length:interactionLength];r.p+=interactionLength;}else{r.p=r.end;interactions=[NSData data];}NSNumber*key=@(nodeID);UIView*view=GNViews[key];
+static void GNApply(NSData *data){uint64_t started=GNNowNanos();GNReader r={(const uint8_t*)data.bytes,(const uint8_t*)data.bytes+data.length};if(u16(&r)!=8)return;uint32_t count=u32(&r);uint64_t sequence=u64(&r);for(uint32_t op=0;op<count;op++){GNMutation mutation=(GNMutation)u8(&r);GNNode kind=(GNNode)u8(&r);uint64_t nodeID=u64(&r),parentID=u64(&r);int32_t index=i32(&r),from=i32(&r);float width=f32(&r),height=f32(&r),padding=f32(&r),gap=f32(&r);uint8_t alignment=u8(&r);BOOL bold=u8(&r);float fontSize=f32(&r);uint64_t handler=u64(&r),changeHandler=u64(&r),toggleHandler=u64(&r);BOOL checked=u8(&r);float progress=f32(&r);NSString*text=str(&r);NSString*accessibility=str(&r);NSString*hint=str(&r);uint8_t role=u8(&r);BOOL focused=u8(&r);BOOL scalesText=u8(&r);NSString*imageSource=str(&r);uint8_t imageMode=u8(&r);BOOL horizontal=u8(&r);uint32_t interactionLength=u32(&r);NSData *interactions;if(r.p+interactionLength<=r.end){interactions=[NSData dataWithBytes:r.p length:interactionLength];r.p+=interactionLength;}else{r.p=r.end;interactions=[NSData data];}uint32_t styleLength=u32(&r);if(styleLength>1048576||r.p+styleLength>r.end)return;NSData *typedStyle=[NSData dataWithBytes:r.p length:styleLength];r.p+=styleLength;NSNumber*key=@(nodeID);UIView*view=GNViews[key];
     if(mutation==GNCreate){view=GNMake(kind);GNViews[key]=view;GNStyle(nodeID,view,kind,text,width,height,padding,gap,alignment,fontSize,bold,handler,changeHandler,toggleHandler,checked,progress,accessibility,hint,role,focused,scalesText,imageSource,imageMode,horizontal,interactions,NO);if(!GNRoot.view.subviews.count){view.backgroundColor=UIColor.systemBackgroundColor;[GNRoot.view addSubview:view];[NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.leadingAnchor],[view.trailingAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.trailingAnchor],[view.topAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.topAnchor],[view.bottomAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.bottomAnchor]]];}}
     else if(mutation==GNUpdate){GNStyle(nodeID,view,kind,text,width,height,padding,gap,alignment,fontSize,bold,handler,changeHandler,toggleHandler,checked,progress,accessibility,hint,role,focused,scalesText,imageSource,imageMode,horizontal,interactions,YES);}
     else if(mutation==GNInsert){UIView*parent=GNViews[@(parentID)];if([parent isKindOfClass:UIStackView.class]){UIStackView*s=(UIStackView*)parent;[s insertArrangedSubview:view atIndex:MIN((NSUInteger)MAX(index,0),s.arrangedSubviews.count)];}else{[parent insertSubview:view atIndex:MIN((NSUInteger)MAX(index,0),parent.subviews.count)];GNSafeAreaView*safe=[parent isKindOfClass:GNSafeAreaView.class]?(GNSafeAreaView*)parent:nil;if([parent isKindOfClass:UIScrollView.class]){UIScrollView*s=(UIScrollView*)parent;[NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:s.contentLayoutGuide.leadingAnchor],[view.trailingAnchor constraintEqualToAnchor:s.contentLayoutGuide.trailingAnchor],[view.topAnchor constraintEqualToAnchor:s.contentLayoutGuide.topAnchor],[view.bottomAnchor constraintEqualToAnchor:s.contentLayoutGuide.bottomAnchor],[view.widthAnchor constraintEqualToAnchor:s.frameLayoutGuide.widthAnchor]]];}else if(safe){GNConstrainSafeAreaChild(safe,view);}}}
@@ -1101,7 +1114,7 @@ public final class MainActivity extends Activity {
             long started = System.nanoTime();
             ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
             if (in.remaining() < 14) return;
-            if (Short.toUnsignedInt(in.getShort()) != 7) return;
+            if (Short.toUnsignedInt(in.getShort()) != 8) return;
             int count = in.getInt();
             long sequence = in.getLong();
             for (int operation = 0; operation < count && in.hasRemaining(); operation++) {
@@ -1135,6 +1148,10 @@ public final class MainActivity extends Activity {
                 int interactionLength = in.remaining() >= 4 ? in.getInt() : 0;
                 byte[] interactions = new byte[Math.max(0, Math.min(interactionLength, in.remaining()))];
                 if (interactions.length > 0) in.get(interactions);
+                int styleLength = in.remaining() >= 4 ? in.getInt() : -1;
+                if (styleLength < 0 || styleLength > 1048576 || styleLength > in.remaining()) return;
+                byte[] typedStyle = new byte[styleLength];
+                in.get(typedStyle);
                 View view = views.get(nodeID);
 
                 if (mutation == CREATE) {
@@ -1142,6 +1159,7 @@ public final class MainActivity extends Activity {
                     view.setTag(nodeID);
                     views.put(nodeID, view);
                     style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
+                    applyTypedStyle(view, typedStyle);
                     applyInteractions(nodeID, view, interactions);
                     if (views.size() == 1) {
                         view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -1151,6 +1169,7 @@ public final class MainActivity extends Activity {
                 } else if (mutation == UPDATE) {
                     if (view != null) {
                         style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
+                        applyTypedStyle(view, typedStyle);
                         applyInteractions(nodeID, view, interactions);
                     }
                 } else if (mutation == INSERT) {
@@ -1224,6 +1243,32 @@ public final class MainActivity extends Activity {
         layout.setOrientation(kind == ROW ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         if (kind == SAFE_AREA) layout.setFitsSystemWindows(true);
         return layout;
+    }
+
+    private void applyTypedStyle(View view, byte[] payload) {
+        if (view == null || payload == null || payload.length < 187) return;
+        ByteBuffer style = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        if (Short.toUnsignedInt(style.getShort(0)) != 1) return;
+        int background = rgba(style, 114), foreground = rgba(style, 118);
+        float borderWidth = style.getFloat(122), cornerRadius = style.getFloat(130), opacity = style.getFloat(158);
+        int borderColor = rgba(style, 126), visibility = Byte.toUnsignedInt(style.get(182));
+        int fontLength = style.getInt(183), disabledOffset = 205 + fontLength;
+        if (fontLength < 0 || disabledOffset >= payload.length) return;
+        if (android.graphics.Color.alpha(background) > 0 || borderWidth > 0) {
+            android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
+            drawable.setColor(background);
+            if (cornerRadius > 0) drawable.setCornerRadius(dp(cornerRadius));
+            if (borderWidth > 0) drawable.setStroke(dp(borderWidth), borderColor);
+            view.setBackground(drawable);
+        }
+        if (view instanceof TextView && android.graphics.Color.alpha(foreground) > 0) ((TextView) view).setTextColor(foreground);
+        if (opacity > 0) view.setAlpha(Math.min(1f, opacity));
+        view.setVisibility(visibility == 2 ? View.GONE : visibility == 1 ? View.INVISIBLE : View.VISIBLE);
+        view.setEnabled(style.get(disabledOffset) == 0);
+    }
+
+    private int rgba(ByteBuffer style, int offset) {
+        return android.graphics.Color.argb(Byte.toUnsignedInt(style.get(offset + 3)), Byte.toUnsignedInt(style.get(offset)), Byte.toUnsignedInt(style.get(offset + 1)), Byte.toUnsignedInt(style.get(offset + 2)));
     }
 
     private void style(View view, int kind, String text, float width, float height, float padding,

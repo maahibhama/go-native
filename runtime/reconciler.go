@@ -19,15 +19,15 @@ func reconcileNode(out *[]Mutation, parent ui.NodeID, index int, oldNode, newNod
 		deleteSubtree(out, parent, index, oldNode)
 		createSubtree(out, parent, index, newNode)
 	default:
-		if oldNode.Props != newNode.Props {
-			*out = append(*out, Mutation{Type: MutationUpdate, NodeID: newNode.ID, NodeType: newNode.Type, Props: newNode.Props})
+		if oldNode.Props != newNode.Props || oldNode.Style != newNode.Style || oldNode.Platform != newNode.Platform {
+			*out = append(*out, Mutation{Type: MutationUpdate, NodeID: newNode.ID, NodeType: newNode.Type, Props: newNode.Props, Style: newNode.Style, Platform: newNode.Platform})
 		}
 		reconcileChildren(out, newNode.ID, oldNode.Children, newNode.Children)
 	}
 }
 
 func createSubtree(out *[]Mutation, parent ui.NodeID, index int, node *ui.Node) {
-	*out = append(*out, Mutation{Type: MutationCreate, NodeID: node.ID, NodeType: node.Type, Props: node.Props})
+	*out = append(*out, Mutation{Type: MutationCreate, NodeID: node.ID, NodeType: node.Type, Props: node.Props, Style: node.Style, Platform: node.Platform})
 	if parent != 0 {
 		*out = append(*out, Mutation{Type: MutationInsert, NodeID: node.ID, ParentID: parent, Index: int32(index)})
 	}

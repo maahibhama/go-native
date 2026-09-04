@@ -26,6 +26,8 @@ type Mutation struct {
 	Index     int32
 	FromIndex int32
 	Props     ui.Props
+	Style     ui.Style
+	Platform  ui.PlatformStyle
 }
 
 // MutationBatch crosses the native boundary as one serialized payload.

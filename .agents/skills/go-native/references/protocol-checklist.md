@@ -20,7 +20,7 @@ Mirror the decoder in:
 - renderer sources embedded in `cmd/gonative/templates.go`;
 - checked-in generated renderers in `examples/my-project/`.
 
-The version is currently `7`; native implementations compare it as a literal. Bump every copy when the byte layout becomes incompatible.
+The version is currently `8`; native implementations compare it as a literal. Bump every copy when the byte layout becomes incompatible.
 
 ## Interaction payload
 

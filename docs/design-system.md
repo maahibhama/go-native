@@ -41,3 +41,13 @@ The Go layout engine supports intrinsic leaf measurement, logical-point and perc
 Use `ui.Grid(columns, children...)` for fixed tracks or `AdaptiveGrid(minColumnWidth)` for viewport-derived columns. `ui.ResponsiveStyle` applies ordered minimum-width `ui.Breakpoint` overrides using `MediaQuery.Viewport`. `runtime/layout.Engine.Direction` controls logical RTL placement without changing the component tree.
 
 These advanced fields remain Go-owned metadata under protocol v7. Native measurement batching and the typed layout mutation protocol are separate v0.2 milestones.
+
+## Batched intrinsic measurement
+
+`runtime/layout.Engine.LayoutMeasured` collects every uncached intrinsic leaf into one `BatchMeasurer` request before computing geometry. Requests contain value-only node type, text/image content, complete typed style, and constraints. Results are matched by integer request ID and rejected when missing, duplicated, unknown, or returned with a structured native error.
+
+`MeasurementCache` keys results by content, style, and constraints and is safe for concurrent access. Hosts must invalidate or replace the cache when native font or asset availability changes. Protocol capability negotiation and bounded payload, mutation-count, and string limits are available in `runtime`.
+
+Protocol v8 embeds the nested record implemented by `runtime.MarshalTypedStyles` and `UnmarshalTypedStyles` in every mutation. It serializes the portable style followed by complete iOS and Android overrides using declaration-ordered, fixed-width little-endian fields. The record has its own version, strict string and trailing-data validation, round-trip coverage, and a stable SHA-256 golden fixture. Both native readers validate and consume the bounded record; field-level native application is tracked separately.
+
+UIKit and Android Views currently apply the portable appearance shell from that record: background and foreground RGBA colors, border width/color, corner radius, opacity, visibility, and disabled interaction. Platform-override merging, complete typography, transforms/shadows, and Go-computed layout geometry remain follow-up decoder work.

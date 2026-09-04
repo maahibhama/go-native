@@ -122,3 +122,16 @@ func TestMutationBatchBinaryRoundTrip(t *testing.T) {
 		t.Fatalf("got %#v want %#v", out, in)
 	}
 }
+
+func TestTypedStyleChangeProducesUpdateMutation(t *testing.T) {
+	oldNode := ui.Text("same").Build()
+	newNode := ui.Text("same").Background(ui.RGB(10, 20, 30)).CornerRadius(8).Build()
+	newNode.ID = oldNode.ID
+	batch := Reconcile(oldNode, newNode)
+	if len(batch.Mutations) != 1 || batch.Mutations[0].Type != MutationUpdate {
+		t.Fatalf("style change mutations = %#v", batch.Mutations)
+	}
+	if batch.Mutations[0].Style.Appearance.Background != ui.RGB(10, 20, 30) {
+		t.Fatalf("typed style missing from mutation: %#v", batch.Mutations[0].Style)
+	}
+}
