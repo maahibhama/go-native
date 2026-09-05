@@ -1,6 +1,6 @@
 # Typed design foundation
 
-Go Native v0.2 introduces the production design model without changing mutation protocol version 7.
+Go Native v0.2 introduces the production design model and mutation protocol version 9.
 
 ## Public model
 
@@ -9,16 +9,14 @@ Go Native v0.2 introduces the production design model without changing mutation 
 - `ui.Token[T]` resolves semantic values with deterministic fallbacks. Use `ColorToken`, `SpacingToken`, `TypographyToken`, and `StyleToken` to create typed tokens.
 - `ui.Environment` carries theme, locale, layout direction, media query, lifecycle, and typed dependencies.
 - `ui.BuildContext` is immutable and scoped by mounted component path.
-- `runtime/layout.Engine` computes deterministic box geometry and accepts a batched/intrinsic `Measurer` implementation.
+- `runtime/layout.Pipeline` batches native intrinsic measurement, computes deterministic box geometry, and flattens it into integer-keyed frames.
 - `runtime/headless.Renderer` applies mutation batches in memory for component and integration tests.
 
-## Protocol v7 compatibility
+## Legacy API compatibility
 
-`Styled` retains the complete typed style on `ui.Node`. Width, height, uniform padding, gap, alignment, font size, and bold weight are projected into the existing `ui.Props` wire record. Other typed fields are available to layout, inspection, and tests but are not yet sent to native renderers.
+`Styled` retains the complete typed style on `ui.Node`. Width, height, uniform padding, gap, alignment, font size, and bold weight are also projected into legacy `ui.Props`, while protocol v9 carries the full typed record and computed geometry to native renderers.
 
-This split is temporary. The typed protocol migration must update Go encoding, both native decoders, generated templates, examples, and golden fixtures together.
-
-Existing modifiers such as `Width`, `Padding`, and `FontSize` now populate both typed style and legacy props. Existing applications therefore remain source- and wire-compatible.
+Existing modifiers such as `Width`, `Padding`, and `FontSize` populate both typed style and legacy props, so application source remains compatible. Custom native hosts are not wire-compatible with earlier protocols and must migrate their decoder as described in `docs/migrations/v0.2.md`.
 
 ## Context-aware applications
 
@@ -40,14 +38,22 @@ The Go layout engine supports intrinsic leaf measurement, logical-point and perc
 
 Use `ui.Grid(columns, children...)` for fixed tracks or `AdaptiveGrid(minColumnWidth)` for viewport-derived columns. `ui.ResponsiveStyle` applies ordered minimum-width `ui.Breakpoint` overrides using `MediaQuery.Viewport`. `runtime/layout.Engine.Direction` controls logical RTL placement without changing the component tree.
 
-These advanced fields remain Go-owned metadata under protocol v7. Native measurement batching and the typed layout mutation protocol are separate v0.2 milestones.
+Advanced layout fields are resolved by the Go-owned layout pipeline before each commit. Hosts receive the resulting logical-point frame in the same mutation record while native controls retain text input, focus, accessibility, selection, and scrolling behavior.
 
 ## Batched intrinsic measurement
 
 `runtime/layout.Engine.LayoutMeasured` collects every uncached intrinsic leaf into one `BatchMeasurer` request before computing geometry. Requests contain value-only node type, text/image content, complete typed style, and constraints. Results are matched by integer request ID and rejected when missing, duplicated, unknown, or returned with a structured native error.
 
+`MarshalMeasurementRequests`/`UnmarshalMeasurementRequests` and their result counterparts define the native adapter wire format. The bounded little-endian protocol carries a versioned batch header, integer request IDs, node type, constraints, content, typed style, measured size, and structured error text. A golden request fixture protects field ordering across Objective-C/JNI implementations.
+
 `MeasurementCache` keys results by content, style, and constraints and is safe for concurrent access. Hosts must invalidate or replace the cache when native font or asset availability changes. Protocol capability negotiation and bounded payload, mutation-count, and string limits are available in `runtime`.
 
-Protocol v8 embeds the nested record implemented by `runtime.MarshalTypedStyles` and `UnmarshalTypedStyles` in every mutation. It serializes the portable style followed by complete iOS and Android overrides using declaration-ordered, fixed-width little-endian fields. The record has its own version, strict string and trailing-data validation, round-trip coverage, and a stable SHA-256 golden fixture. Both native readers validate and consume the bounded record; field-level native application is tracked separately.
+Protocol v9 embeds the nested record implemented by `runtime.MarshalTypedStyles` and `UnmarshalTypedStyles` in every mutation. It serializes the portable style followed by complete iOS and Android overrides using declaration-ordered, fixed-width little-endian fields, then an optional computed frame. The style record has its own version, strict string and trailing-data validation, round-trip coverage, and a stable SHA-256 golden fixture.
 
-UIKit and Android Views currently apply the portable appearance shell from that record: background and foreground RGBA colors, border width/color, corner radius, opacity, visibility, and disabled interaction. Platform-override merging, complete typography, transforms/shadows, and Go-computed layout geometry remain follow-up decoder work.
+UIKit and Android Views apply the appearance and typography shell from that record: background and foreground RGBA colors, border width/color, corner radius, opacity, visibility, disabled interaction, font family/size/weight, line height, letter spacing, translation, scale, rotation, and native shadows/elevation. Each host resolves its own platform override after portable style and applies guarded computed geometry without replacing the full-screen root host.
+
+## Focus and lifecycle
+
+`FocusManager`, `FocusScope`, `FocusNode`, and `UseFocusNode` provide application-scoped focus identity, traversal, observation, programmatic requests, and deterministic mounted cleanup. Controls associate a node with `WithFocusNode`; native focus changes return only the integer `NodeID`, and programmatic requests are mirrored through the normal controlled `Focused` prop.
+
+Native foreground, active, inactive, background, memory-pressure, and destroyed callbacks update the runtime environment. `Runtime.ObserveLifecycle` supports application services independently of rendering, while `UseLifecycle` rebuilds mounted UI through context. Both subscriptions clean up deterministically.

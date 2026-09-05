@@ -9,7 +9,7 @@ import (
 	"io"
 )
 
-const protocolVersion uint16 = 8
+const protocolVersion uint16 = 9
 
 const (
 	MaxProtocolPayload   = 16 << 20
@@ -105,6 +105,14 @@ func (b MutationBatch) MarshalBinary() ([]byte, error) {
 		}
 		_ = binary.Write(&out, binary.LittleEndian, uint32(len(styles)))
 		out.Write(styles)
+		if m.HasFrame {
+			out.WriteByte(1)
+		} else {
+			out.WriteByte(0)
+		}
+		for _, value := range []float32{m.Frame.X, m.Frame.Y, m.Frame.Width, m.Frame.Height} {
+			_ = binary.Write(&out, binary.LittleEndian, value)
+		}
 		if out.Len() > MaxProtocolPayload {
 			return nil, &ProtocolError{Kind: "limit", Detail: "payload exceeds maximum length"}
 		}
@@ -266,6 +274,16 @@ func UnmarshalMutationBatch(data []byte) (MutationBatch, error) {
 		m.Style, m.Platform, e = UnmarshalTypedStyles(styleBytes)
 		if e != nil {
 			return MutationBatch{}, e
+		}
+		hasFrame, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		m.HasFrame = hasFrame != 0
+		for _, value := range []*float32{&m.Frame.X, &m.Frame.Y, &m.Frame.Width, &m.Frame.Height} {
+			if e = binary.Read(r, binary.LittleEndian, value); e != nil {
+				return MutationBatch{}, e
+			}
 		}
 		b.Mutations = append(b.Mutations, m)
 	}

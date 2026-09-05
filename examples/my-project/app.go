@@ -28,6 +28,14 @@ func App() ui.Component {
 
 // renderLoginScreen builds the interactive Login View with input fields, image logo, and buttons.
 func renderLoginScreen() ui.Component {
+	return ui.Functional("login-form", func(ctx ui.BuildContext) ui.Component {
+		usernameFocus := ui.UseFocusNode(ctx, "username", ui.DefaultFocusOptions())
+		passwordFocus := ui.UseFocusNode(ctx, "password", ui.DefaultFocusOptions())
+		return renderLoginForm(usernameFocus, passwordFocus)
+	})
+}
+
+func renderLoginForm(usernameFocus, passwordFocus *ui.FocusNode) ui.Component {
 	return ui.SafeArea(
 		ui.Column(
 			// Brand Header Image & Titles
@@ -39,13 +47,13 @@ func renderLoginScreen() ui.Component {
 			ui.Text("Username / Email").FontSize(14).Bold(),
 			ui.TextInput(username.Get(), func(val string) {
 				username.Set(val)
-			}).AccessibilityHint("Enter your username or email").Width(280),
+			}).WithFocusNode(usernameFocus).AccessibilityHint("Enter your username or email").Width(280),
 
 			// Password Input
 			ui.Text("Password").FontSize(14).Bold(),
 			ui.TextInput(password.Get(), func(val string) {
 				password.Set(val)
-			}).AccessibilityHint("Enter your password").Width(280),
+			}).WithFocusNode(passwordFocus).AccessibilityHint("Enter your password").Width(280),
 
 			// Remember Me Switch
 			ui.Row(
@@ -115,7 +123,7 @@ func renderDashboardScreen() ui.Component {
 }
 
 // layoutSystemExample demonstrates the production layout API. The explicit
-// sizes retain protocol-v7 native compatibility while Go-owned layout tests use
+// sizes retain legacy modifier compatibility while Go-owned layout tests use
 // the flex, aspect-ratio, adaptive-grid, RTL, and responsive metadata.
 func layoutSystemExample() ui.Component {
 	return ui.Functional("layout-system-example", func(ctx ui.BuildContext) ui.Component {
@@ -145,7 +153,18 @@ func layoutSystemExample() ui.Component {
 }
 
 func layoutCard(title, detail string, ratio float32) ui.Component {
-	card := ui.Column(ui.Text(title).Bold(), ui.Text(detail).FontSize(12)).Width(136).Height(72).Padding(8).Gap(4).Flex(1, 1)
+	card := ui.Column(
+		ui.Text(title).Bold().Foreground(ui.RGB(24, 33, 52)),
+		ui.Text(detail).FontSize(12).Foreground(ui.RGB(82, 96, 122)),
+	).Width(136).Height(72).Padding(8).Gap(4).Flex(1, 1).Styled(ui.Style{Appearance: ui.AppearanceStyle{
+		Background:   ui.RGB(245, 248, 255),
+		Border:       ui.Border{Width: 1, Color: ui.RGB(207, 218, 238)},
+		CornerRadius: 10,
+		Shadow:       ui.Shadow{Color: ui.RGB(30, 64, 120), Offset: ui.Point{Y: 2}, Blur: 4, Opacity: 0.14},
+	}}).PlatformStyled(ui.PlatformStyle{
+		IOS:     ui.Style{Appearance: ui.AppearanceStyle{Background: ui.RGB(247, 245, 255), Border: ui.Border{Width: 1, Color: ui.RGB(218, 207, 242)}, CornerRadius: 10}},
+		Android: ui.Style{Appearance: ui.AppearanceStyle{Background: ui.RGB(243, 250, 247), Border: ui.Border{Width: 1, Color: ui.RGB(198, 226, 211)}, CornerRadius: 10}},
+	})
 	if ratio > 0 {
 		card.AspectRatio(ratio)
 	}

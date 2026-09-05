@@ -16,22 +16,27 @@ type ContextApp func(ui.BuildContext) ui.Component
 
 // Runtime owns tree identity, handlers, reconciliation, and render scheduling.
 type Runtime struct {
-	app         App
-	renderer    Renderer
-	events      *EventRegistry
-	mu          sync.Mutex
-	tree        *ui.Node
-	scheduled   bool
-	stopped     bool
-	sequence    atomic.Uint64
-	timingMu    sync.Mutex
-	pending     map[uint64]pendingTiming
-	samples     []TimingSample
-	eventAt     time.Time
-	diagnostics *Diagnostics
-	environment ui.Environment
-	contextApp  ContextApp
-	hooks       *ui.HookRegistry
+	app                   App
+	renderer              Renderer
+	layoutProvider        LayoutProvider
+	events                *EventRegistry
+	mu                    sync.Mutex
+	tree                  *ui.Node
+	geometry              map[ui.NodeID]ui.LayoutRect
+	scheduled             bool
+	stopped               bool
+	sequence              atomic.Uint64
+	timingMu              sync.Mutex
+	pending               map[uint64]pendingTiming
+	samples               []TimingSample
+	eventAt               time.Time
+	diagnostics           *Diagnostics
+	environment           ui.Environment
+	contextApp            ContextApp
+	hooks                 *ui.HookRegistry
+	focus                 *ui.FocusManager
+	lifecycleObservers    map[uint64]func(ui.LifecycleState)
+	nextLifecycleObserver uint64
 }
 
 type pendingTiming struct {
@@ -44,14 +49,23 @@ const timingHistoryLimit uint64 = 1024
 
 // New creates an application runtime.
 func New(app App, renderer Renderer) *Runtime {
-	runtime := &Runtime{app: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming), diagnostics: NewDiagnostics(), environment: ui.DefaultEnvironment()}
+	runtime := &Runtime{app: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming), diagnostics: NewDiagnostics(), environment: ui.DefaultEnvironment(), lifecycleObservers: make(map[uint64]func(ui.LifecycleState))}
+	runtime.focus = ui.NewFocusManager(runtime)
+	runtime.environment.Focus = runtime.focus
 	runtime.hooks = ui.NewHookRegistry(runtime)
 	return runtime
 }
 
 // NewContext creates a runtime using the context-aware application contract.
 func NewContext(app ContextApp, renderer Renderer, environment ui.Environment) *Runtime {
-	runtime := &Runtime{contextApp: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming), diagnostics: NewDiagnostics(), environment: environment}
+	runtime := &Runtime{contextApp: app, renderer: renderer, events: NewEventRegistry(), pending: make(map[uint64]pendingTiming), diagnostics: NewDiagnostics(), environment: environment, lifecycleObservers: make(map[uint64]func(ui.LifecycleState))}
+	if environment.Focus == nil {
+		environment.Focus = ui.NewFocusManager(runtime)
+	} else {
+		environment.Focus.SetScheduler(runtime)
+	}
+	runtime.environment = environment
+	runtime.focus = environment.Focus
 	runtime.hooks = ui.NewHookRegistry(runtime)
 	return runtime
 }
@@ -79,7 +93,50 @@ func (r *Runtime) UpdateEnvironment(update func(ui.Environment) ui.Environment) 
 
 // SetLifecycle updates the portable lifecycle state and schedules observers.
 func (r *Runtime) SetLifecycle(state ui.LifecycleState) {
-	r.UpdateEnvironment(func(environment ui.Environment) ui.Environment { environment.Lifecycle = state; return environment })
+	r.mu.Lock()
+	if r.environment.Lifecycle == state || r.stopped {
+		r.mu.Unlock()
+		return
+	}
+	r.environment.Lifecycle = state
+	observers := make([]func(ui.LifecycleState), 0, len(r.lifecycleObservers))
+	for _, observer := range r.lifecycleObservers {
+		observers = append(observers, observer)
+	}
+	r.mu.Unlock()
+	for _, observer := range observers {
+		observer(state)
+	}
+	r.Schedule()
+}
+
+// ObserveLifecycle subscribes application services to native lifecycle changes.
+// Observation is independent of rendering and cancellation is idempotent.
+func (r *Runtime) ObserveLifecycle(observer func(ui.LifecycleState)) func() {
+	if observer == nil {
+		return func() {}
+	}
+	r.mu.Lock()
+	r.nextLifecycleObserver++
+	id := r.nextLifecycleObserver
+	r.lifecycleObservers[id] = observer
+	state := r.environment.Lifecycle
+	r.mu.Unlock()
+	observer(state)
+	var once sync.Once
+	return func() { once.Do(func() { r.mu.Lock(); delete(r.lifecycleObservers, id); r.mu.Unlock() }) }
+}
+
+// FocusManager exposes the application-scoped portable focus tree.
+func (r *Runtime) FocusManager() *ui.FocusManager { return r.focus }
+
+// SetLayoutProvider installs the Go-owned geometry pipeline used before each
+// commit. Passing nil disables computed-frame mutations.
+func (r *Runtime) SetLayoutProvider(provider LayoutProvider) {
+	r.mu.Lock()
+	r.layoutProvider = provider
+	r.geometry = nil
+	r.mu.Unlock()
 }
 
 // Start renders the initial tree and installs this runtime as the state scheduler.
@@ -101,9 +158,21 @@ func (r *Runtime) Stop() {
 	}
 	r.stopped = true
 	r.scheduled = false
+	var lifecycleObservers []func(ui.LifecycleState)
+	if r.environment.Lifecycle != ui.LifecycleDestroyed {
+		r.environment.Lifecycle = ui.LifecycleDestroyed
+		lifecycleObservers = make([]func(ui.LifecycleState), 0, len(r.lifecycleObservers))
+		for _, observer := range r.lifecycleObservers {
+			lifecycleObservers = append(lifecycleObservers, observer)
+		}
+	}
 	releaseTree(r.events, r.tree)
 	r.tree = nil
+	r.lifecycleObservers = make(map[uint64]func(ui.LifecycleState))
 	r.mu.Unlock()
+	for _, observer := range lifecycleObservers {
+		observer(ui.LifecycleDestroyed)
+	}
 	r.hooks.Dispose()
 	ui.SetScheduler(nil)
 	r.diagnostics.Record(LogEntry{Kind: LogRuntimeStopped})
@@ -183,6 +252,62 @@ func (r *Runtime) DispatchGesture(id ui.HandlerID, event ui.GestureEvent) bool {
 	return false
 }
 
+// DispatchFocus mirrors a native focus transition into the portable focus tree.
+// Native callers identify controls only by integer NodeID values.
+func (r *Runtime) DispatchFocus(id ui.NodeID, focused bool) bool {
+	r.mu.Lock()
+	node := findNode(r.tree, id)
+	r.mu.Unlock()
+	if node == nil || node.Focus == nil {
+		return false
+	}
+	if focused {
+		return r.focus.RequestFocus(node.Focus)
+	}
+	return r.focus.ClearFocus(node.Focus)
+}
+
+// FocusedNodeID returns the currently requested native focus target.
+func (r *Runtime) FocusedNodeID() (ui.NodeID, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	focused := r.focus.Focused()
+	if focused == nil {
+		return 0, false
+	}
+	return findFocusNodeID(r.tree, focused)
+}
+
+func findNode(node *ui.Node, id ui.NodeID) *ui.Node {
+	if node == nil {
+		return nil
+	}
+	if node.ID == id {
+		return node
+	}
+	for _, child := range node.Children {
+		if found := findNode(child, id); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func findFocusNodeID(node *ui.Node, focus *ui.FocusNode) (ui.NodeID, bool) {
+	if node == nil {
+		return 0, false
+	}
+	if node.Focus == focus {
+		return node.ID, true
+	}
+	for _, child := range node.Children {
+		if id, ok := findFocusNodeID(child, focus); ok {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
 // LogEntries returns a copy of the bounded structured runtime log.
 func (r *Runtime) LogEntries() []LogEntry { return r.diagnostics.Entries() }
 
@@ -250,7 +375,22 @@ func (r *Runtime) render() error {
 	next := ui.BuildWithContext(component, context)
 	r.bindHandlers(r.tree, next)
 	stabilizeIDs(r.tree, next)
+	syncPortableFocus(next, r.focus.Focused())
 	batch := Reconcile(r.tree, next)
+	provider := r.layoutProvider
+	if provider == nil {
+		provider, _ = r.renderer.(LayoutProvider)
+	}
+	if provider != nil {
+		frames, err := provider.ComputeLayout(next, r.environment)
+		if err != nil {
+			r.hooks.AbortRender()
+			r.mu.Unlock()
+			return err
+		}
+		batch.Mutations = attachGeometry(batch.Mutations, next, r.geometry, frames)
+		r.geometry = geometryMap(frames)
+	}
 	if len(batch.Mutations) > 0 {
 		batch.Sequence = r.sequence.Add(1)
 		r.timingMu.Lock()
@@ -276,6 +416,62 @@ func (r *Runtime) render() error {
 	r.mu.Unlock()
 	r.hooks.CommitRender()
 	return nil
+}
+
+func syncPortableFocus(node *ui.Node, focused *ui.FocusNode) {
+	if node == nil {
+		return
+	}
+	if node.Focus != nil {
+		node.Props.Focused = node.Focus == focused
+	}
+	for _, child := range node.Children {
+		syncPortableFocus(child, focused)
+	}
+}
+
+func geometryMap(frames []ui.LayoutFrame) map[ui.NodeID]ui.LayoutRect {
+	out := make(map[ui.NodeID]ui.LayoutRect, len(frames))
+	for _, frame := range frames {
+		out[frame.NodeID] = frame.Rect
+	}
+	return out
+}
+
+func attachGeometry(mutations []Mutation, tree *ui.Node, previous map[ui.NodeID]ui.LayoutRect, frames []ui.LayoutFrame) []Mutation {
+	nodes := make(map[ui.NodeID]*ui.Node)
+	var visit func(*ui.Node)
+	visit = func(node *ui.Node) {
+		if node == nil {
+			return
+		}
+		nodes[node.ID] = node
+		for _, child := range node.Children {
+			visit(child)
+		}
+	}
+	visit(tree)
+	mutationByID := make(map[ui.NodeID]int)
+	for index := range mutations {
+		if mutations[index].Type == MutationCreate || mutations[index].Type == MutationUpdate {
+			mutationByID[mutations[index].NodeID] = index
+		}
+	}
+	for _, frame := range frames {
+		if index, ok := mutationByID[frame.NodeID]; ok {
+			mutations[index].HasFrame, mutations[index].Frame = true, frame.Rect
+			continue
+		}
+		if old, ok := previous[frame.NodeID]; ok && old == frame.Rect {
+			continue
+		}
+		node := nodes[frame.NodeID]
+		if node == nil {
+			continue
+		}
+		mutations = append(mutations, Mutation{Type: MutationUpdate, NodeID: node.ID, NodeType: node.Type, Props: node.Props, Style: node.Style, Platform: node.Platform, HasFrame: true, Frame: frame.Rect})
+	}
+	return mutations
 }
 
 func stabilizeIDs(oldNode, newNode *ui.Node) {

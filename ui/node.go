@@ -106,6 +106,8 @@ type Node struct {
 	Toggle            func(bool)
 	Intents           IntentSet
 	GestureHandlerIDs []HandlerID
+	// Focus is Go-owned portable focus identity and never crosses the bridge.
+	Focus *FocusNode
 }
 
 // Component builds a virtual UI node.

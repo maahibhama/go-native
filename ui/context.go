@@ -41,6 +41,16 @@ type MediaQuery struct {
 	Pointers       PointerCapabilities
 }
 
+// LayoutRect is a Go-computed rectangle expressed in platform-independent
+// logical points. It is value-only so it can safely cross a native boundary.
+type LayoutRect struct{ X, Y, Width, Height float32 }
+
+// LayoutFrame associates deterministic geometry with a stable node identity.
+type LayoutFrame struct {
+	NodeID NodeID
+	Rect   LayoutRect
+}
+
 type LifecycleState uint8
 
 const (
@@ -93,10 +103,11 @@ type Environment struct {
 	MediaQuery   MediaQuery
 	Lifecycle    LifecycleState
 	Dependencies *Dependencies
+	Focus        *FocusManager
 }
 
 func DefaultEnvironment() Environment {
-	return Environment{Theme: DefaultTheme(), Locale: "en", Direction: DirectionLTR, Lifecycle: LifecycleCreated, Dependencies: NewDependencies()}
+	return Environment{Theme: DefaultTheme(), Locale: "en", Direction: DirectionLTR, Lifecycle: LifecycleCreated, Dependencies: NewDependencies(), Focus: NewFocusManager(nil)}
 }
 
 // BuildContext is immutable application context scoped to a mounted component.
@@ -120,6 +131,9 @@ func (c BuildContext) WithEnvironment(environment Environment) BuildContext {
 	c.Environment = environment
 	return c
 }
+
+// FocusManager returns the application-scoped portable focus owner.
+func (c BuildContext) FocusManager() *FocusManager { return c.Environment.Focus }
 
 // WithHooks attaches mounted hook storage. It is used by runtimes and custom
 // render hosts; application components normally receive an already configured context.

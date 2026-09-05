@@ -2,7 +2,7 @@
 
 An item is complete only when it has tests, relevant documentation, successful iOS and Android builds, and device verification where native behavior is involved.
 
-## Production foundation (v0.2 in progress)
+## Production foundation (v0.2 complete)
 
 - [x] Typed `Style`, `Theme`, semantic `Token[T]`, and platform-style contracts
 - [x] Environment, media-query, lifecycle, typed dependencies, and `BuildContext`
@@ -12,14 +12,17 @@ An item is complete only when it has tests, relevant documentation, successful i
 - [x] Initial Go-owned constraint layout engine and intrinsic measurement interface
 - [x] Mounted component paths and component-scoped state, reducer, ref, memo, callback, effect, lifecycle, and media hooks
 - [x] Flex growth/shrink/basis, wrapping, aspect ratio, adaptive grid, RTL, and responsive breakpoint layout
-- [ ] Batched native intrinsic measurement and typed mutation protocol
+- [x] Batched native intrinsic measurement and typed mutation protocol
   - [x] Value-only measurement batch API, result validation, and content/style/constraint cache
   - [x] Protocol capability negotiation and bounded decoder allocations
   - [x] Versioned, fixed-width typed-style record with portable/iOS/Android overrides and golden fixture
-  - [x] Protocol v8 mutation integration with bounded UIKit/Android/template/example readers
+  - [x] Protocol v9 mutation integration with bounded UIKit/Android/template/example readers
   - [x] Portable native background/foreground, border, radius, opacity, visibility, and disabled styling
-  - [ ] Platform override merging, typography/transforms/shadows, computed geometry, and native measurement adapters
-- [ ] Focus tree and lifecycle callbacks wired from both native hosts
+  - [x] Portable native typography, transforms, and shadows/elevation
+  - [x] Native iOS/Android platform override group resolution
+  - [x] Bounded native measurement request/result wire protocol and golden fixture
+  - [x] UIKit/JNI measurement adapters and computed geometry transmission
+- [x] Focus tree and lifecycle callbacks wired from both native hosts
 
 ## Foundation
 
@@ -47,7 +50,7 @@ Every primitive requires typed props, reconciliation and protocol tests, both na
 
 - [ ] Keyed List backed by UICollectionView and RecyclerView
 - [ ] Native gesture and animation intent contracts
-- [ ] Foreground/background lifecycle
+- [x] Foreground/background lifecycle
 - [ ] Cancellation and structured renderer errors
 
 ## Tooling and distribution

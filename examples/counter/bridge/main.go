@@ -4,14 +4,18 @@ package main
 #include <stdint.h>
 #include <stdlib.h>
 void GNApplyMutationBatch(const uint8_t *bytes, int32_t length);
+int32_t GNMeasureNativeBatch(const uint8_t *bytes, int32_t length, uint8_t **results, int32_t *resultLength);
+void GNFreeNativeBuffer(void *buffer);
 */
 import "C"
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/go-native/go-native/examples/counter"
 	gnruntime "github.com/go-native/go-native/runtime"
+	"github.com/go-native/go-native/runtime/layout"
 	"github.com/go-native/go-native/ui"
 	"time"
 	"unsafe"
@@ -20,6 +24,41 @@ import (
 var benchmarkOutput string
 
 type iosRenderer struct{}
+
+// iosNativeMeasurer is the UIKit implementation of the portable batched
+// intrinsic-measurement contract. All values cross as owned byte buffers.
+type iosNativeMeasurer struct{}
+
+func (iosNativeMeasurer) MeasureBatch(ctx context.Context, requests []layout.MeasurementRequest) ([]layout.MeasurementResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	data, err := layout.MarshalMeasurementRequests(requests)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, errors.New("empty native measurement request")
+	}
+	var output *C.uint8_t
+	var outputLength C.int32_t
+	status := C.GNMeasureNativeBatch((*C.uint8_t)(unsafe.Pointer(&data[0])), C.int32_t(len(data)), &output, &outputLength)
+	if output != nil {
+		defer C.GNFreeNativeBuffer(unsafe.Pointer(output))
+	}
+	if status != 0 {
+		return nil, fmt.Errorf("UIKit measurement failed with status %d", int32(status))
+	}
+	if output == nil || outputLength <= 0 {
+		return nil, errors.New("UIKit measurement returned an empty response")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return layout.UnmarshalMeasurementResults(C.GoBytes(unsafe.Pointer(output), C.int(outputLength)))
+}
+
+var _ layout.BatchMeasurer = iosNativeMeasurer{}
 
 func (iosRenderer) Apply(batch gnruntime.MutationBatch) error {
 	data, err := batch.MarshalBinary()
@@ -38,9 +77,26 @@ var appRuntime *gnruntime.Runtime
 //export GoNativeStart
 func GoNativeStart() {
 	appRuntime = gnruntime.New(counter.App, iosRenderer{})
+	appRuntime.SetLayoutProvider(&layout.Pipeline{Measurer: iosNativeMeasurer{}, Cache: layout.NewMeasurementCache()})
 	if err := appRuntime.Start(); err != nil {
 		panic(err)
 	}
+}
+
+//export GoNativeSetViewport
+func GoNativeSetViewport(width, height, scale C.float) {
+	if appRuntime == nil || width <= 0 || height <= 0 {
+		return
+	}
+	current := appRuntime.Environment().MediaQuery
+	if current.Viewport.Width == float32(width) && current.Viewport.Height == float32(height) && current.Scale == float32(scale) {
+		return
+	}
+	appRuntime.UpdateEnvironment(func(environment ui.Environment) ui.Environment {
+		environment.MediaQuery.Viewport = ui.Size{Width: float32(width), Height: float32(height)}
+		environment.MediaQuery.Scale = float32(scale)
+		return environment
+	})
 }
 
 //export GoNativeDispatchEvent
@@ -74,11 +130,25 @@ func GoNativeDispatchGestureEvent(handler C.uint64_t, translationX, translationY
 	}
 }
 
+//export GoNativeDispatchFocus
+func GoNativeDispatchFocus(nodeID C.uint64_t, focused C.uint8_t) {
+	if appRuntime != nil {
+		appRuntime.DispatchFocus(ui.NodeID(nodeID), focused != 0)
+	}
+}
+
 //export GoNativeStop
 func GoNativeStop() {
 	if appRuntime != nil {
 		appRuntime.Stop()
 		appRuntime = nil
+	}
+}
+
+//export GoNativeSetLifecycle
+func GoNativeSetLifecycle(state C.uint8_t) {
+	if appRuntime != nil && state <= C.uint8_t(ui.LifecycleDestroyed) {
+		appRuntime.SetLifecycle(ui.LifecycleState(state))
 	}
 }
 

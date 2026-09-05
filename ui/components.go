@@ -220,6 +220,13 @@ func (e *element) AccessibilityFocused(value bool) *element {
 	return e
 }
 
+// WithFocusNode associates this native control with a portable focus identity.
+// The identity remains Go-owned; native events refer to the element's NodeID.
+func (e *element) WithFocusNode(node *FocusNode) *element {
+	e.node.Focus = node
+	return e
+}
+
 // ScalesText opts text into the platform's user-selected text scaling behavior.
 func (e *element) ScalesText() *element {
 	e.node.Props.ScalesText = true

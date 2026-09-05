@@ -13,6 +13,113 @@ type recordingRenderer struct {
 	batches []MutationBatch
 }
 
+type fixedLayoutRenderer struct{ recordingRenderer }
+
+func (r *fixedLayoutRenderer) ComputeLayout(root *ui.Node, _ ui.Environment) ([]ui.LayoutFrame, error) {
+	return []ui.LayoutFrame{{NodeID: root.ID, Rect: ui.LayoutRect{Width: 320, Height: 640}}}, nil
+}
+
+func TestRuntimeAttachesComputedGeometry(t *testing.T) {
+	renderer := &fixedLayoutRenderer{}
+	r := New(func() ui.Component { return ui.View() }, renderer)
+	if err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer r.Stop()
+	if len(renderer.batches) != 1 || len(renderer.batches[0].Mutations) != 1 {
+		t.Fatalf("batches = %#v", renderer.batches)
+	}
+	mutation := renderer.batches[0].Mutations[0]
+	if !mutation.HasFrame || mutation.Frame.Width != 320 || mutation.Frame.Height != 640 {
+		t.Fatalf("computed frame = %#v", mutation)
+	}
+}
+
+func TestRuntimeLifecycleObserversAndFocusEnvironment(t *testing.T) {
+	renderer := &recordingRenderer{}
+	var expected *ui.FocusManager
+	r := NewContext(func(ctx ui.BuildContext) ui.Component {
+		if ctx.FocusManager() != expected {
+			return ui.Text("missing focus")
+		}
+		return ui.Text("ready")
+	}, renderer, ui.DefaultEnvironment())
+	expected = r.FocusManager()
+	var observed []ui.LifecycleState
+	cancel := r.ObserveLifecycle(func(state ui.LifecycleState) { observed = append(observed, state) })
+	if err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	r.SetLifecycle(ui.LifecycleActive)
+	r.SetLifecycle(ui.LifecycleActive)
+	cancel()
+	r.SetLifecycle(ui.LifecycleBackground)
+	if len(observed) != 2 || observed[0] != ui.LifecycleCreated || observed[1] != ui.LifecycleActive {
+		t.Fatalf("lifecycle observations = %v", observed)
+	}
+	r.Stop()
+}
+
+func TestRuntimeDispatchesNativeFocusByNodeID(t *testing.T) {
+	renderer := &recordingRenderer{}
+	const inputID ui.NodeID = 900
+	var focus *ui.FocusNode
+	r := NewContext(func(ctx ui.BuildContext) ui.Component {
+		return ui.Functional("screen", func(ctx ui.BuildContext) ui.Component {
+			focus = ui.UseFocusNode(ctx, "email", ui.DefaultFocusOptions())
+			return ui.WithID(ui.TextInput("", nil).WithFocusNode(focus), inputID)
+		})
+	}, renderer, ui.DefaultEnvironment())
+	if err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if !r.DispatchFocus(inputID, true) || !focus.HasFocus() {
+		t.Fatal("native focus gain was not mirrored")
+	}
+	if id, ok := r.FocusedNodeID(); !ok || id != inputID {
+		t.Fatalf("focused node = %d, %v", id, ok)
+	}
+	if !r.DispatchFocus(inputID, false) || focus.HasFocus() {
+		t.Fatal("native focus loss was not mirrored")
+	}
+	r.Stop()
+}
+
+func TestPortableFocusRequestBecomesNativeFocusedProp(t *testing.T) {
+	renderer := &recordingRenderer{}
+	var focus *ui.FocusNode
+	r := NewContext(func(ctx ui.BuildContext) ui.Component {
+		return ui.Functional("screen", func(ctx ui.BuildContext) ui.Component {
+			focus = ui.UseFocusNode(ctx, "email", ui.DefaultFocusOptions())
+			return ui.TextInput("", nil).WithFocusNode(focus)
+		})
+	}, renderer, ui.DefaultEnvironment())
+	if err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if !focus.RequestFocus() {
+		t.Fatal("focus request failed")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		renderer.mu.Lock()
+		if len(renderer.batches) >= 2 {
+			last := renderer.batches[len(renderer.batches)-1]
+			renderer.mu.Unlock()
+			if len(last.Mutations) != 1 || !last.Mutations[0].Props.Focused {
+				t.Fatalf("focus mutation = %#v", last.Mutations)
+			}
+			break
+		}
+		renderer.mu.Unlock()
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for focus mutation")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	r.Stop()
+}
+
 type rendererFunc func(MutationBatch) error
 
 func (f rendererFunc) Apply(batch MutationBatch) error { return f(batch) }

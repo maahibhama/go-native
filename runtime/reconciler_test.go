@@ -110,6 +110,8 @@ func TestMutationBatchBinaryRoundTrip(t *testing.T) {
 	in.Mutations[0].Props.ImageMode = ui.ImageFill
 	in.Mutations[0].Props.Horizontal = true
 	in.Mutations[0].Props.Interactions = string([]byte{0, 1, 0, 255})
+	in.Mutations[0].HasFrame = true
+	in.Mutations[0].Frame = ui.LayoutRect{X: 1, Y: 2, Width: 120, Height: 44}
 	data, err := in.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)

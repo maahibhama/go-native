@@ -14,7 +14,7 @@ const typedStyleRecordVersion uint16 = 1
 
 // MarshalTypedStyles encodes portable, iOS, and Android styles in declaration
 // order using fixed-width little-endian values. It is the nested style record
-// used by mutation protocol v8.
+// used by mutation protocol v9.
 func MarshalTypedStyles(portable ui.Style, platform ui.PlatformStyle) ([]byte, error) {
 	var out bytes.Buffer
 	_ = binary.Write(&out, binary.LittleEndian, typedStyleRecordVersion)

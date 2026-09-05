@@ -457,10 +457,13 @@ gonative run android
 @end
 
 void GNApplyMutationBatch(const uint8_t *bytes, int32_t length);
+int32_t GNMeasureNativeBatch(const uint8_t *bytes, int32_t length, uint8_t **results, int32_t *resultLength);
+void GNFreeNativeBuffer(void *buffer);
 `,
 		"ios/GoNativeRenderer.m": `#import "GoNativeRenderer.h"
 #import "counter.h"
 #include <time.h>
+#include <math.h>
 
 typedef NS_ENUM(uint8_t, GNMutation) { GNCreate=1, GNDelete, GNUpdate, GNInsert, GNRemove, GNMove };
 typedef NS_ENUM(uint8_t, GNNode) { GNView=1, GNText, GNButton, GNRow, GNColumn, GNSafeArea, GNTextInput, GNSwitch, GNProgressIndicator, GNImage, GNScrollView };
@@ -473,14 +476,19 @@ typedef NS_ENUM(uint8_t, GNNode) { GNView=1, GNText, GNButton, GNRow, GNColumn, 
 
 @interface GNAction : NSObject
 @property(nonatomic) uint64_t handler;
+@property(nonatomic) uint64_t nodeID;
 - (void)invoke;
 - (void)change:(UITextField *)sender;
 - (void)toggle:(UISwitch *)sender;
+- (void)focus:(UITextField *)sender;
+- (void)blur:(UITextField *)sender;
 @end
 @implementation GNAction
 - (void)invoke { GoNativeDispatchEvent(self.handler); }
 - (void)change:(UITextField *)sender { GoNativeDispatchValueEvent(self.handler, (char *)sender.text.UTF8String); }
 - (void)toggle:(UISwitch *)sender { GoNativeDispatchBoolEvent(self.handler, sender.isOn ? 1 : 0); }
+- (void)focus:(UITextField *)sender { (void)sender; GoNativeDispatchFocus(self.nodeID, 1); }
+- (void)blur:(UITextField *)sender { (void)sender; GoNativeDispatchFocus(self.nodeID, 0); }
 @end
 
 @interface GNGestureAction : NSObject
@@ -505,6 +513,8 @@ typedef NS_ENUM(uint8_t, GNNode) { GNView=1, GNText, GNButton, GNRow, GNColumn, 
 static NSMutableDictionary<NSNumber *,UIView *> *GNViews;
 static NSMutableDictionary<NSNumber *,GNAction *> *GNActions;
 static NSMutableDictionary<NSNumber *,NSArray<GNGestureAction *> *> *GNGestureActions;
+static NSMutableDictionary<NSNumber *,NSValue *> *GNComputedFrames;
+static NSMutableDictionary<NSNumber *,NSArray<NSLayoutConstraint *> *> *GNFrameConstraints;
 static __weak GNRootViewController *GNRoot;
 
 typedef struct { const uint8_t *p; const uint8_t *end; } GNReader;
@@ -561,10 +571,11 @@ static void GNStyle(uint64_t nodeID, UIView *view, GNNode kind, NSString *text, 
         UIFont*btnFont=bold?[UIFont boldSystemFontOfSize:fontSize>0?fontSize:16]:[UIFont systemFontOfSize:fontSize>0?fontSize:16];
         if (@available(iOS 15.0, *)) {
             UIButtonConfiguration *cfg = b.configuration ?: [UIButtonConfiguration filledButtonConfiguration];
-            cfg.title = text;
+            cfg.attributedTitle = [[NSAttributedString alloc] initWithString:text?:@"" attributes:@{NSFontAttributeName:btnFont}];
             cfg.baseBackgroundColor = [UIColor systemBlueColor];
             cfg.baseForegroundColor = [UIColor whiteColor];
             cfg.cornerStyle = UIButtonConfigurationCornerStyleMedium;
+            cfg.contentInsets = NSDirectionalEdgeInsetsMake(12,20,12,20);
             b.configuration = cfg;
         } else {
             [b setTitle:text forState:UIControlStateNormal];
@@ -574,6 +585,8 @@ static void GNStyle(uint64_t nodeID, UIView *view, GNNode kind, NSString *text, 
             b.layer.cornerRadius = 8.0;
             b.clipsToBounds = YES;
         }
+        b.titleLabel.numberOfLines = 1;
+        b.titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
         NSNumber*actionKey=@(nodeID);GNAction*a=GNActions[actionKey];if(!a&&handler){a=[GNAction new];GNActions[actionKey]=a;[b addTarget:a action:@selector(invoke) forControlEvents:UIControlEventTouchUpInside];}a.handler=handler;
     }
     if ([view isKindOfClass:UITextField.class]) {
@@ -584,7 +597,7 @@ static void GNStyle(uint64_t nodeID, UIView *view, GNNode kind, NSString *text, 
         f.borderStyle = UITextBorderStyleRoundedRect;
         f.autocapitalizationType = UITextAutocapitalizationTypeNone;
         f.autocorrectionType = UITextAutocorrectionTypeNo;
-        NSNumber*actionKey=@(nodeID);GNAction*a=GNActions[actionKey];if(!a&&changeHandler){a=[GNAction new];GNActions[actionKey]=a;[f addTarget:a action:@selector(change:) forControlEvents:UIControlEventEditingChanged];}a.handler=changeHandler;
+        NSNumber*actionKey=@(nodeID);GNAction*a=GNActions[actionKey];if(!a){a=[GNAction new];a.nodeID=nodeID;GNActions[actionKey]=a;[f addTarget:a action:@selector(change:) forControlEvents:UIControlEventEditingChanged];[f addTarget:a action:@selector(focus:) forControlEvents:UIControlEventEditingDidBegin];[f addTarget:a action:@selector(blur:) forControlEvents:UIControlEventEditingDidEnd];}a.handler=changeHandler;
     }
     if ([view isKindOfClass:UISwitch.class]) { UISwitch*s=(UISwitch*)view;[s setOn:checked animated:NO];NSNumber*actionKey=@(nodeID);GNAction*a=GNActions[actionKey];if(!a&&toggleHandler){a=[GNAction new];GNActions[actionKey]=a;[s addTarget:a action:@selector(toggle:) forControlEvents:UIControlEventValueChanged];}a.handler=toggleHandler; }
     if ([view isKindOfClass:UIProgressView.class]) { [(UIProgressView*)view setProgress:progress animated:NO]; }
@@ -607,23 +620,31 @@ static void GNStyle(uint64_t nodeID, UIView *view, GNNode kind, NSString *text, 
     if ([view isKindOfClass:UIStackView.class]) { UIStackView*s=(UIStackView*)view;s.spacing=gap;s.layoutMarginsRelativeArrangement=YES;s.directionalLayoutMargins=NSDirectionalEdgeInsetsMake(padding,padding,padding,padding);s.alignment=alignment==1?UIStackViewAlignmentCenter:alignment==2?UIStackViewAlignmentTrailing:UIStackViewAlignmentLeading; }
     if ([view isKindOfClass:GNSafeAreaView.class]) { ((GNSafeAreaView *)view).gnAlignment=alignment; }
     if(width>0)[view.widthAnchor constraintEqualToConstant:width].active=YES;if(height>0)[view.heightAnchor constraintEqualToConstant:height].active=YES;
-    view.isAccessibilityElement=(kind==GNText||kind==GNButton||kind==GNTextInput||kind==GNSwitch||kind==GNProgressIndicator||role!=0);view.accessibilityLabel=accessibility.length?accessibility:text;view.accessibilityHint=hint;UIAccessibilityTraits traits=UIAccessibilityTraitNone;if(role==2||kind==GNButton)traits|=UIAccessibilityTraitButton;if(role==3)traits|=UIAccessibilityTraitHeader;if(role==4)traits|=UIAccessibilityTraitImage;view.accessibilityTraits=traits;if(focused)UIAccessibilityPostNotification(UIAccessibilityScreenChangedNotification,view);
+    view.isAccessibilityElement=(kind==GNText||kind==GNButton||kind==GNTextInput||kind==GNSwitch||kind==GNProgressIndicator||role!=0);view.accessibilityLabel=accessibility.length?accessibility:text;view.accessibilityHint=hint;UIAccessibilityTraits traits=UIAccessibilityTraitNone;if(role==2||kind==GNButton)traits|=UIAccessibilityTraitButton;if(role==3)traits|=UIAccessibilityTraitHeader;if(role==4)traits|=UIAccessibilityTraitImage;view.accessibilityTraits=traits;if(focused){if(view.canBecomeFirstResponder&&![view isFirstResponder])[view becomeFirstResponder];UIAccessibilityPostNotification(UIAccessibilityScreenChangedNotification,view);}else if([view isFirstResponder]){[view resignFirstResponder];}
     GNConfigureInteractions(nodeID,view,interactions,animate);
 }
 
 static UIView *GNMake(GNNode kind){UIView*v;if(kind==GNText){UILabel*l=[UILabel new];l.numberOfLines=0;l.textColor=UIColor.labelColor;v=l;}else if(kind==GNButton){UIButton*b=[UIButton buttonWithType:UIButtonTypeSystem];v=b;}else if(kind==GNTextInput){UITextField*f=[UITextField new];f.borderStyle=UITextBorderStyleRoundedRect;v=f;}else if(kind==GNSwitch){v=[UISwitch new];}else if(kind==GNProgressIndicator){v=[[UIProgressView alloc]initWithProgressViewStyle:UIProgressViewStyleDefault];}else if(kind==GNImage){v=[UIImageView new];}else if(kind==GNScrollView){v=[UIScrollView new];}else if(kind==GNRow||kind==GNColumn){UIStackView*s=[UIStackView new];s.axis=kind==GNRow?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;v=s;}else if(kind==GNSafeArea){v=[GNSafeAreaView new];v.backgroundColor=UIColor.systemBackgroundColor;}else{v=[UIView new];v.backgroundColor=UIColor.systemBackgroundColor;}v.translatesAutoresizingMaskIntoConstraints=NO;return v;}
 
 static UIColor *GNColor(const uint8_t *p){return [UIColor colorWithRed:p[0]/255.0 green:p[1]/255.0 blue:p[2]/255.0 alpha:p[3]/255.0];}
+static NSUInteger GNStyleSize(const uint8_t *style,const uint8_t *end){if(style+185>end)return 0;uint32_t fontLength=0;memcpy(&fontLength,style+181,4);NSUInteger size=220+(NSUInteger)fontLength;return style+size<=end?size:0;}
+static BOOL GNHasTypedValues(const uint8_t *p,NSUInteger length,const uint8_t *end){if(p+length>end)return NO;for(NSUInteger i=0;i<length;i++)if(p[i]!=0)return YES;return NO;}
 static void GNApplyTypedStyle(UIView *view, NSData *payload){
-    if(!view||payload.length<187)return;const uint8_t*p=payload.bytes;uint16_t version=0;memcpy(&version,p,2);if(version!=1)return;
-    float borderWidth=0,cornerRadius=0,opacity=0;memcpy(&borderWidth,p+122,4);memcpy(&cornerRadius,p+130,4);memcpy(&opacity,p+158,4);
-    if(p[117]>0)view.backgroundColor=GNColor(p+114);
-    if([view isKindOfClass:UILabel.class]&&p[121]>0)((UILabel*)view).textColor=GNColor(p+118);
-    if([view isKindOfClass:UIButton.class]&&p[121]>0)[((UIButton*)view) setTitleColor:GNColor(p+118) forState:UIControlStateNormal];
-    if(borderWidth>0){view.layer.borderWidth=borderWidth;view.layer.borderColor=GNColor(p+126).CGColor;}
+    if(!view||payload.length<187)return;const uint8_t*record=payload.bytes,*end=record+payload.length;uint16_t version=0;memcpy(&version,record,2);if(version!=1)return;
+    const uint8_t*portable=record+2;NSUInteger portableSize=GNStyleSize(portable,end);if(!portableSize)return;const uint8_t*ios=portable+portableSize;NSUInteger iosSize=GNStyleSize(ios,end);if(!iosSize)return;
+    const uint8_t*appearance=GNHasTypedValues(ios+112,69,end)?ios+112:portable+112;
+    uint32_t iosFontLength=0;memcpy(&iosFontLength,ios+181,4);const uint8_t*text=GNHasTypedValues(ios+181,22+(NSUInteger)iosFontLength,end)?ios:portable;
+    const uint8_t*interaction=GNHasTypedValues(ios+203+(NSUInteger)iosFontLength,17,end)?ios:portable;
+    float borderWidth=0,cornerRadius=0,opacity=0;memcpy(&borderWidth,appearance+8,4);memcpy(&cornerRadius,appearance+16,4);memcpy(&opacity,appearance+44,4);
+    if(appearance[3]>0)view.backgroundColor=GNColor(appearance);
+    if([view isKindOfClass:UILabel.class]&&appearance[7]>0)((UILabel*)view).textColor=GNColor(appearance+4);
+    if([view isKindOfClass:UIButton.class]&&appearance[7]>0)[((UIButton*)view) setTitleColor:GNColor(appearance+4) forState:UIControlStateNormal];
+    if(borderWidth>0){view.layer.borderWidth=borderWidth;view.layer.borderColor=GNColor(appearance+12).CGColor;}
     if(cornerRadius>0){view.layer.cornerRadius=cornerRadius;view.clipsToBounds=YES;}
-    if(opacity>0)view.alpha=MIN(1,opacity);view.hidden=p[182]!=0;
-    uint32_t fontLength=0;memcpy(&fontLength,p+183,4);NSUInteger disabledOffset=205+(NSUInteger)fontLength;if(disabledOffset<payload.length)view.userInteractionEnabled=p[disabledOffset]==0;
+    if(opacity>0)view.alpha=MIN(1,opacity);view.hidden=appearance[68]!=0;
+    float tx=0,ty=0,sx=0,sy=0,rotation=0;memcpy(&tx,appearance+48,4);memcpy(&ty,appearance+52,4);memcpy(&sx,appearance+56,4);memcpy(&sy,appearance+60,4);memcpy(&rotation,appearance+64,4);view.transform=CGAffineTransformRotate(CGAffineTransformScale(CGAffineTransformMakeTranslation(tx,ty),sx==0?1:sx,sy==0?1:sy),rotation*(CGFloat)M_PI/180.0);
+    float shadowX=0,shadowY=0,shadowBlur=0,shadowOpacity=0;memcpy(&shadowX,appearance+24,4);memcpy(&shadowY,appearance+28,4);memcpy(&shadowBlur,appearance+32,4);memcpy(&shadowOpacity,appearance+40,4);if(shadowOpacity>0){view.layer.shadowColor=GNColor(appearance+20).CGColor;view.layer.shadowOffset=CGSizeMake(shadowX,shadowY);view.layer.shadowRadius=shadowBlur;view.layer.shadowOpacity=shadowOpacity;}
+    uint32_t fontLength=0;memcpy(&fontLength,text+181,4);NSUInteger disabledOffset=203;uint32_t interactionFontLength=0;memcpy(&interactionFontLength,interaction+181,4);disabledOffset+=(NSUInteger)interactionFontLength;if(interaction+disabledOffset>=end)return;NSUInteger fontOffset=185+(NSUInteger)fontLength;float fontSize=0,lineHeight=0,letterSpacing=0;uint16_t fontWeight=0;memcpy(&fontSize,text+fontOffset,4);memcpy(&fontWeight,text+fontOffset+4,2);memcpy(&lineHeight,text+fontOffset+6,4);memcpy(&letterSpacing,text+fontOffset+10,4);NSString*family=[[NSString alloc]initWithBytes:text+185 length:fontLength encoding:NSUTF8StringEncoding]?:@"";UIFont*font=family.length?[UIFont fontWithName:family size:fontSize]:nil;if(!font&&fontSize>0)font=[UIFont systemFontOfSize:fontSize weight:fontWeight>=600?UIFontWeightBold:UIFontWeightRegular];if(font){if([view isKindOfClass:UILabel.class])((UILabel*)view).font=font;else if([view isKindOfClass:UIButton.class])((UIButton*)view).titleLabel.font=font;else if([view isKindOfClass:UITextField.class])((UITextField*)view).font=font;}if([view isKindOfClass:UILabel.class]&&(lineHeight>0||letterSpacing!=0)){UILabel*l=(UILabel*)view;NSMutableParagraphStyle*paragraph=[NSMutableParagraphStyle new];if(lineHeight>0){paragraph.minimumLineHeight=lineHeight;paragraph.maximumLineHeight=lineHeight;}l.attributedText=[[NSAttributedString alloc]initWithString:l.text?:@"" attributes:@{NSKernAttributeName:@(letterSpacing),NSParagraphStyleAttributeName:paragraph}];}view.userInteractionEnabled=interaction[disabledOffset]==0;
 }
 
 static void GNConstrainSafeAreaChild(GNSafeAreaView *parent, UIView *view) {
@@ -635,21 +656,66 @@ static void GNConstrainSafeAreaChild(GNSafeAreaView *parent, UIView *view) {
     [NSLayoutConstraint activateConstraints:constraints];
 }
 
-static void GNApply(NSData *data){uint64_t started=GNNowNanos();GNReader r={(const uint8_t*)data.bytes,(const uint8_t*)data.bytes+data.length};if(u16(&r)!=8)return;uint32_t count=u32(&r);uint64_t sequence=u64(&r);for(uint32_t op=0;op<count;op++){GNMutation mutation=(GNMutation)u8(&r);GNNode kind=(GNNode)u8(&r);uint64_t nodeID=u64(&r),parentID=u64(&r);int32_t index=i32(&r),from=i32(&r);float width=f32(&r),height=f32(&r),padding=f32(&r),gap=f32(&r);uint8_t alignment=u8(&r);BOOL bold=u8(&r);float fontSize=f32(&r);uint64_t handler=u64(&r),changeHandler=u64(&r),toggleHandler=u64(&r);BOOL checked=u8(&r);float progress=f32(&r);NSString*text=str(&r);NSString*accessibility=str(&r);NSString*hint=str(&r);uint8_t role=u8(&r);BOOL focused=u8(&r);BOOL scalesText=u8(&r);NSString*imageSource=str(&r);uint8_t imageMode=u8(&r);BOOL horizontal=u8(&r);uint32_t interactionLength=u32(&r);NSData *interactions;if(r.p+interactionLength<=r.end){interactions=[NSData dataWithBytes:r.p length:interactionLength];r.p+=interactionLength;}else{r.p=r.end;interactions=[NSData data];}uint32_t styleLength=u32(&r);if(styleLength>1048576||r.p+styleLength>r.end)return;NSData *typedStyle=[NSData dataWithBytes:r.p length:styleLength];r.p+=styleLength;NSNumber*key=@(nodeID);UIView*view=GNViews[key];
-    if(mutation==GNCreate){view=GNMake(kind);GNViews[key]=view;GNStyle(nodeID,view,kind,text,width,height,padding,gap,alignment,fontSize,bold,handler,changeHandler,toggleHandler,checked,progress,accessibility,hint,role,focused,scalesText,imageSource,imageMode,horizontal,interactions,NO);if(!GNRoot.view.subviews.count){view.backgroundColor=UIColor.systemBackgroundColor;[GNRoot.view addSubview:view];[NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.leadingAnchor],[view.trailingAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.trailingAnchor],[view.topAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.topAnchor],[view.bottomAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.bottomAnchor]]];}}
-    else if(mutation==GNUpdate){GNStyle(nodeID,view,kind,text,width,height,padding,gap,alignment,fontSize,bold,handler,changeHandler,toggleHandler,checked,progress,accessibility,hint,role,focused,scalesText,imageSource,imageMode,horizontal,interactions,YES);}
-    else if(mutation==GNInsert){UIView*parent=GNViews[@(parentID)];if([parent isKindOfClass:UIStackView.class]){UIStackView*s=(UIStackView*)parent;[s insertArrangedSubview:view atIndex:MIN((NSUInteger)MAX(index,0),s.arrangedSubviews.count)];}else{[parent insertSubview:view atIndex:MIN((NSUInteger)MAX(index,0),parent.subviews.count)];GNSafeAreaView*safe=[parent isKindOfClass:GNSafeAreaView.class]?(GNSafeAreaView*)parent:nil;if([parent isKindOfClass:UIScrollView.class]){UIScrollView*s=(UIScrollView*)parent;[NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:s.contentLayoutGuide.leadingAnchor],[view.trailingAnchor constraintEqualToAnchor:s.contentLayoutGuide.trailingAnchor],[view.topAnchor constraintEqualToAnchor:s.contentLayoutGuide.topAnchor],[view.bottomAnchor constraintEqualToAnchor:s.contentLayoutGuide.bottomAnchor],[view.widthAnchor constraintEqualToAnchor:s.frameLayoutGuide.widthAnchor]]];}else if(safe){GNConstrainSafeAreaChild(safe,view);}}}
+static void GNApplyComputedFrame(uint64_t nodeID,UIView *view) {
+    if(!view||!view.superview||view.superview==GNRoot.view)return;
+    NSValue *value=GNComputedFrames[@(nodeID)];if(!value)return;CGRect frame=value.CGRectValue;
+    NSArray<NSLayoutConstraint *> *old=GNFrameConstraints[@(nodeID)];if(old.count)[NSLayoutConstraint deactivateConstraints:old];
+    NSMutableArray<NSLayoutConstraint *> *legacySize=[NSMutableArray array];for(NSLayoutConstraint *constraint in view.constraints)if(constraint.firstItem==view&&(constraint.firstAttribute==NSLayoutAttributeWidth||constraint.firstAttribute==NSLayoutAttributeHeight))[legacySize addObject:constraint];if(legacySize.count)[NSLayoutConstraint deactivateConstraints:legacySize];
+    NSMutableArray<NSLayoutConstraint *> *constraints=[NSMutableArray array];
+    if(![view.superview isKindOfClass:UIStackView.class]){[constraints addObject:[view.leadingAnchor constraintEqualToAnchor:view.superview.leadingAnchor constant:frame.origin.x]];[constraints addObject:[view.topAnchor constraintEqualToAnchor:view.superview.topAnchor constant:frame.origin.y]];}
+    if(frame.size.width>=0)[constraints addObject:[view.widthAnchor constraintEqualToConstant:frame.size.width]];
+    if(frame.size.height>=0)[constraints addObject:[view.heightAnchor constraintEqualToConstant:frame.size.height]];
+    [NSLayoutConstraint activateConstraints:constraints];GNFrameConstraints[@(nodeID)]=constraints;
+}
+
+static void GNApply(NSData *data){uint64_t started=GNNowNanos();GNReader r={(const uint8_t*)data.bytes,(const uint8_t*)data.bytes+data.length};if(u16(&r)!=9)return;uint32_t count=u32(&r);uint64_t sequence=u64(&r);for(uint32_t op=0;op<count;op++){GNMutation mutation=(GNMutation)u8(&r);GNNode kind=(GNNode)u8(&r);uint64_t nodeID=u64(&r),parentID=u64(&r);int32_t index=i32(&r),from=i32(&r);float width=f32(&r),height=f32(&r),padding=f32(&r),gap=f32(&r);uint8_t alignment=u8(&r);BOOL bold=u8(&r);float fontSize=f32(&r);uint64_t handler=u64(&r),changeHandler=u64(&r),toggleHandler=u64(&r);BOOL checked=u8(&r);float progress=f32(&r);NSString*text=str(&r);NSString*accessibility=str(&r);NSString*hint=str(&r);uint8_t role=u8(&r);BOOL focused=u8(&r);BOOL scalesText=u8(&r);NSString*imageSource=str(&r);uint8_t imageMode=u8(&r);BOOL horizontal=u8(&r);uint32_t interactionLength=u32(&r);NSData *interactions;if(r.p+interactionLength<=r.end){interactions=[NSData dataWithBytes:r.p length:interactionLength];r.p+=interactionLength;}else{r.p=r.end;interactions=[NSData data];}uint32_t styleLength=u32(&r);if(styleLength>1048576||r.p+styleLength>r.end)return;NSData *typedStyle=[NSData dataWithBytes:r.p length:styleLength];r.p+=styleLength;if(r.p+17>r.end)return;BOOL hasFrame=u8(&r);float frameX=f32(&r),frameY=f32(&r),frameWidth=f32(&r),frameHeight=f32(&r);NSNumber*key=@(nodeID);if(hasFrame)GNComputedFrames[key]=[NSValue valueWithCGRect:CGRectMake(frameX,frameY,MAX(0,frameWidth),MAX(0,frameHeight))];else{[GNComputedFrames removeObjectForKey:key];NSArray<NSLayoutConstraint*>*old=GNFrameConstraints[key];if(old.count)[NSLayoutConstraint deactivateConstraints:old];[GNFrameConstraints removeObjectForKey:key];}UIView*view=GNViews[key];
+    if(mutation==GNCreate){view=GNMake(kind);GNViews[key]=view;GNStyle(nodeID,view,kind,text,width,height,padding,gap,alignment,fontSize,bold,handler,changeHandler,toggleHandler,checked,progress,accessibility,hint,role,focused,scalesText,imageSource,imageMode,horizontal,interactions,NO);GNApplyTypedStyle(view,typedStyle);if(!GNRoot.view.subviews.count){view.backgroundColor=UIColor.systemBackgroundColor;[GNRoot.view addSubview:view];[NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.leadingAnchor],[view.trailingAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.trailingAnchor],[view.topAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.topAnchor],[view.bottomAnchor constraintEqualToAnchor:GNRoot.view.safeAreaLayoutGuide.bottomAnchor]]];}}
+    else if(mutation==GNUpdate){GNStyle(nodeID,view,kind,text,width,height,padding,gap,alignment,fontSize,bold,handler,changeHandler,toggleHandler,checked,progress,accessibility,hint,role,focused,scalesText,imageSource,imageMode,horizontal,interactions,YES);GNApplyTypedStyle(view,typedStyle);GNApplyComputedFrame(nodeID,view);}
+    else if(mutation==GNInsert){UIView*parent=GNViews[@(parentID)];if([parent isKindOfClass:UIStackView.class]){UIStackView*s=(UIStackView*)parent;[s insertArrangedSubview:view atIndex:MIN((NSUInteger)MAX(index,0),s.arrangedSubviews.count)];}else{[parent insertSubview:view atIndex:MIN((NSUInteger)MAX(index,0),parent.subviews.count)];GNSafeAreaView*safe=[parent isKindOfClass:GNSafeAreaView.class]?(GNSafeAreaView*)parent:nil;if([parent isKindOfClass:UIScrollView.class]&&!hasFrame){UIScrollView*s=(UIScrollView*)parent;[NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:s.contentLayoutGuide.leadingAnchor],[view.trailingAnchor constraintEqualToAnchor:s.contentLayoutGuide.trailingAnchor],[view.topAnchor constraintEqualToAnchor:s.contentLayoutGuide.topAnchor],[view.bottomAnchor constraintEqualToAnchor:s.contentLayoutGuide.bottomAnchor],[view.widthAnchor constraintEqualToAnchor:s.frameLayoutGuide.widthAnchor]]];}else if(safe&&!hasFrame){GNConstrainSafeAreaChild(safe,view);}GNApplyComputedFrame(nodeID,view);}}
     else if(mutation==GNRemove){[view removeFromSuperview];}
     else if(mutation==GNMove){UIView*parent=GNViews[@(parentID)];if([parent isKindOfClass:UIStackView.class]){UIStackView*s=(UIStackView*)parent;[s removeArrangedSubview:view];[s insertArrangedSubview:view atIndex:MIN((NSUInteger)MAX(index,0),s.arrangedSubviews.count)];}}
-    else if(mutation==GNDelete){[view removeFromSuperview];[GNViews removeObjectForKey:key];[GNActions removeObjectForKey:key];[GNGestureActions removeObjectForKey:key];}
+    else if(mutation==GNDelete){NSArray<NSLayoutConstraint *>*frameConstraints=GNFrameConstraints[key];if(frameConstraints.count)[NSLayoutConstraint deactivateConstraints:frameConstraints];[view removeFromSuperview];[GNViews removeObjectForKey:key];[GNActions removeObjectForKey:key];[GNGestureActions removeObjectForKey:key];[GNComputedFrames removeObjectForKey:key];[GNFrameConstraints removeObjectForKey:key];}
     (void)from;
 }GoNativeReportBatchApplied(sequence,GNNowNanos()-started);}
 
 void GNApplyMutationBatch(const uint8_t *bytes,int32_t length){NSData*copy=[NSData dataWithBytes:bytes length:(NSUInteger)length];dispatch_async(dispatch_get_main_queue(),^{GNApply(copy);});}
 
+static void GNAppendU16(NSMutableData *data,uint16_t value){[data appendBytes:&value length:sizeof(value)];}
+static void GNAppendU32(NSMutableData *data,uint32_t value){[data appendBytes:&value length:sizeof(value)];}
+static void GNAppendU64(NSMutableData *data,uint64_t value){[data appendBytes:&value length:sizeof(value)];}
+static void GNAppendF32(NSMutableData *data,float value){[data appendBytes:&value length:sizeof(value)];}
+static BOOL GNReadStringChecked(GNReader *reader,NSString **value){if(reader->p+4>reader->end)return NO;uint32_t length=u32(reader);if(length>1048576||reader->p+length>reader->end)return NO;*value=[[NSString alloc]initWithBytes:reader->p length:length encoding:NSUTF8StringEncoding]?:@"";reader->p+=length;return YES;}
+static UIFont *GNMeasurementFont(NSData *typedStyle,CGFloat fallback){
+    const uint8_t *record=typedStyle.bytes,*end=record+typedStyle.length;if(typedStyle.length<2)return [UIFont systemFontOfSize:fallback];uint16_t version=0;memcpy(&version,record,2);if(version!=1)return [UIFont systemFontOfSize:fallback];
+    const uint8_t *style=record+2;NSUInteger styleSize=GNStyleSize(style,end);if(!styleSize)return [UIFont systemFontOfSize:fallback];uint32_t familyLength=0;memcpy(&familyLength,style+181,4);NSUInteger fontOffset=185+(NSUInteger)familyLength;if(style+fontOffset+6>end)return [UIFont systemFontOfSize:fallback];
+    float fontSize=0;uint16_t weight=0;memcpy(&fontSize,style+fontOffset,4);memcpy(&weight,style+fontOffset+4,2);NSString *family=[[NSString alloc]initWithBytes:style+185 length:familyLength encoding:NSUTF8StringEncoding]?:@"";CGFloat size=fontSize>0?fontSize:fallback;UIFont *font=family.length?[UIFont fontWithName:family size:size]:nil;return font?:[UIFont systemFontOfSize:size weight:weight>=600?UIFontWeightBold:UIFontWeightRegular];
+}
+static CGSize GNMeasureControl(GNNode kind,NSString *text,NSString *imageSource,NSData *typedStyle,CGSize constraint){
+    UIView *view=GNMake(kind);UIFont *font=GNMeasurementFont(typedStyle,kind==GNButton||kind==GNTextInput?16:17);
+    if([view isKindOfClass:UILabel.class]){UILabel *label=(UILabel *)view;label.text=text;label.font=font;label.numberOfLines=0;}
+    else if([view isKindOfClass:UIButton.class]){CGRect title=[(text?:@"") boundingRectWithSize:CGSizeMake(CGFLOAT_MAX,CGFLOAT_MAX) options:NSStringDrawingUsesLineFragmentOrigin|NSStringDrawingUsesFontLeading attributes:@{NSFontAttributeName:font} context:nil];return CGSizeMake(MAX(44,ceil(title.size.width)+40),MAX(44,ceil(title.size.height)+24));}
+    else if([view isKindOfClass:UITextField.class]){CGRect content=[(text.length?text:@"M") boundingRectWithSize:CGSizeMake(CGFLOAT_MAX,CGFLOAT_MAX) options:NSStringDrawingUsesLineFragmentOrigin|NSStringDrawingUsesFontLeading attributes:@{NSFontAttributeName:font} context:nil];return CGSizeMake(MAX(240,ceil(content.size.width)+32),MAX(44,ceil(content.size.height)+20));}
+    else if([view isKindOfClass:UIImageView.class]){UIImage *image=[UIImage imageNamed:imageSource]?:[UIImage systemImageNamed:imageSource];((UIImageView *)view).image=image;}
+    CGSize size=[view sizeThatFits:constraint];if(size.width<=0||size.height<=0)size=view.intrinsicContentSize;if(size.width==UIViewNoIntrinsicMetric)size.width=0;if(size.height==UIViewNoIntrinsicMetric)size.height=0;return size;
+}
+int32_t GNMeasureNativeBatch(const uint8_t *bytes,int32_t length,uint8_t **results,int32_t *resultLength){
+    if(!results||!resultLength){return 1;}*results=NULL;*resultLength=0;if(!bytes||length<6||length>16777216)return 2;NSData *input=[NSData dataWithBytes:bytes length:(NSUInteger)length];__block NSMutableData *output=nil;__block int32_t status=0;
+    void (^measure)(void)=^{GNReader reader={(const uint8_t *)input.bytes,(const uint8_t *)input.bytes+input.length};uint16_t version=u16(&reader);uint32_t count=u32(&reader);if(version!=1||count>100000){status=3;return;}output=[NSMutableData data];GNAppendU16(output,1);GNAppendU32(output,count);
+        for(uint32_t index=0;index<count;index++){if(reader.p+25>reader.end){status=4;return;}uint64_t requestID=u64(&reader);GNNode kind=(GNNode)u8(&reader);float minWidth=f32(&reader),maxWidth=f32(&reader),minHeight=f32(&reader),maxHeight=f32(&reader);NSString *text=@"",*image=@"";if(!GNReadStringChecked(&reader,&text)||!GNReadStringChecked(&reader,&image)||reader.p+4>reader.end){status=4;return;}uint32_t styleLength=u32(&reader);if(styleLength>1048576||reader.p+styleLength>reader.end){status=4;return;}NSData *style=[NSData dataWithBytes:reader.p length:styleLength];reader.p+=styleLength;CGFloat width=isfinite(maxWidth)&&maxWidth>0?maxWidth:CGFLOAT_MAX,height=isfinite(maxHeight)&&maxHeight>0?maxHeight:CGFLOAT_MAX;CGSize size=GNMeasureControl(kind,text,image,style,CGSizeMake(width,height));size.width=MAX(minWidth,MIN(size.width,width));size.height=MAX(minHeight,MIN(size.height,height));GNAppendU64(output,requestID);GNAppendF32(output,(float)size.width);GNAppendF32(output,(float)size.height);GNAppendU32(output,0);}
+        if(reader.p!=reader.end||output.length>16777216){status=5;output=nil;}
+    };if(NSThread.isMainThread)measure();else dispatch_sync(dispatch_get_main_queue(),measure);if(status!=0||!output)return status?:6;void *buffer=malloc(output.length);if(!buffer)return 7;memcpy(buffer,output.bytes,output.length);*results=buffer;*resultLength=(int32_t)output.length;return 0;
+}
+void GNFreeNativeBuffer(void *buffer){free(buffer);}
+
 @implementation GNRootViewController
-- (void)viewDidLoad {[super viewDidLoad];self.view.backgroundColor=UIColor.systemBackgroundColor;GNRoot=self;GNViews=[NSMutableDictionary dictionary];GNActions=[NSMutableDictionary dictionary];GNGestureActions=[NSMutableDictionary dictionary];GoNativeStart();}
-- (void)dealloc { GoNativeStop(); }
+- (void)viewDidLoad {[super viewDidLoad];self.view.backgroundColor=UIColor.systemBackgroundColor;GNRoot=self;GNViews=[NSMutableDictionary dictionary];GNActions=[NSMutableDictionary dictionary];GNGestureActions=[NSMutableDictionary dictionary];GNComputedFrames=[NSMutableDictionary dictionary];GNFrameConstraints=[NSMutableDictionary dictionary];GoNativeStart();GoNativeSetLifecycle(1);[[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(gnDidBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];[[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(gnWillResignActive) name:UIApplicationWillResignActiveNotification object:nil];[[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(gnDidEnterBackground) name:UIApplicationDidEnterBackgroundNotification object:nil];[[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(gnWillEnterForeground) name:UIApplicationWillEnterForegroundNotification object:nil];[[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(gnMemoryWarning) name:UIApplicationDidReceiveMemoryWarningNotification object:nil];}
+- (void)gnDidBecomeActive { GoNativeSetLifecycle(2); }
+- (void)gnWillResignActive { GoNativeSetLifecycle(3); }
+- (void)gnDidEnterBackground { GoNativeSetLifecycle(4); }
+- (void)gnWillEnterForeground { GoNativeSetLifecycle(1); }
+- (void)gnMemoryWarning { GoNativeSetLifecycle(5); }
+- (void)viewDidLayoutSubviews {[super viewDidLayoutSubviews];CGRect viewport=self.view.safeAreaLayoutGuide.layoutFrame;GoNativeSetViewport((float)viewport.size.width,(float)viewport.size.height,(float)UIScreen.mainScreen.scale);}
+- (void)dealloc { [[NSNotificationCenter defaultCenter]removeObserver:self];GoNativeSetLifecycle(6);GoNativeStop(); }
 @end
 `,
 		"ios/main.m": `#import <UIKit/UIKit.h>
@@ -714,15 +780,19 @@ int main(int argc, char * argv[]) {
 #include <stdint.h>
 #include <stdlib.h>
 void GNApplyMutationBatch(const uint8_t *bytes, int32_t length);
+int32_t GNMeasureNativeBatch(const uint8_t *bytes, int32_t length, uint8_t **results, int32_t *resultLength);
+void GNFreeNativeBuffer(void *buffer);
 */
 import "C"
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"%s"
 	gnruntime "github.com/go-native/go-native/runtime"
+	"github.com/go-native/go-native/runtime/layout"
 	"github.com/go-native/go-native/ui"
+	"%s"
 	"time"
 	"unsafe"
 )
@@ -730,6 +800,39 @@ import (
 var benchmarkOutput string
 
 type iosRenderer struct{}
+
+type iosNativeMeasurer struct{}
+
+func (iosNativeMeasurer) MeasureBatch(ctx context.Context, requests []layout.MeasurementRequest) ([]layout.MeasurementResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	data, err := layout.MarshalMeasurementRequests(requests)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, errors.New("empty native measurement request")
+	}
+	var output *C.uint8_t
+	var outputLength C.int32_t
+	status := C.GNMeasureNativeBatch((*C.uint8_t)(unsafe.Pointer(&data[0])), C.int32_t(len(data)), &output, &outputLength)
+	if output != nil {
+		defer C.GNFreeNativeBuffer(unsafe.Pointer(output))
+	}
+	if status != 0 {
+		return nil, fmt.Errorf("UIKit measurement failed with status %%d", int32(status))
+	}
+	if output == nil || outputLength <= 0 {
+		return nil, errors.New("UIKit measurement returned an empty response")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return layout.UnmarshalMeasurementResults(C.GoBytes(unsafe.Pointer(output), C.int(outputLength)))
+}
+
+var _ layout.BatchMeasurer = iosNativeMeasurer{}
 
 func (iosRenderer) Apply(batch gnruntime.MutationBatch) error {
 	data, err := batch.MarshalBinary()
@@ -748,9 +851,26 @@ var appRuntime *gnruntime.Runtime
 //export GoNativeStart
 func GoNativeStart() {
 	appRuntime = gnruntime.New(app.App, iosRenderer{})
+	appRuntime.SetLayoutProvider(&layout.Pipeline{Measurer: iosNativeMeasurer{}, Cache: layout.NewMeasurementCache()})
 	if err := appRuntime.Start(); err != nil {
 		panic(err)
 	}
+}
+
+//export GoNativeSetViewport
+func GoNativeSetViewport(width, height, scale C.float) {
+	if appRuntime == nil || width <= 0 || height <= 0 {
+		return
+	}
+	current := appRuntime.Environment().MediaQuery
+	if current.Viewport.Width == float32(width) && current.Viewport.Height == float32(height) && current.Scale == float32(scale) {
+		return
+	}
+	appRuntime.UpdateEnvironment(func(environment ui.Environment) ui.Environment {
+		environment.MediaQuery.Viewport = ui.Size{Width: float32(width), Height: float32(height)}
+		environment.MediaQuery.Scale = float32(scale)
+		return environment
+	})
 }
 
 //export GoNativeDispatchEvent
@@ -784,11 +904,25 @@ func GoNativeDispatchGestureEvent(handler C.uint64_t, translationX, translationY
 	}
 }
 
+//export GoNativeDispatchFocus
+func GoNativeDispatchFocus(nodeID C.uint64_t, focused C.uint8_t) {
+	if appRuntime != nil {
+		appRuntime.DispatchFocus(ui.NodeID(nodeID), focused != 0)
+	}
+}
+
 //export GoNativeStop
 func GoNativeStop() {
 	if appRuntime != nil {
 		appRuntime.Stop()
 		appRuntime = nil
+	}
+}
+
+//export GoNativeSetLifecycle
+func GoNativeSetLifecycle(state C.uint8_t) {
+	if appRuntime != nil && state <= C.uint8_t(ui.LifecycleDestroyed) {
+		appRuntime.SetLifecycle(ui.LifecycleState(state))
 	}
 }
 
@@ -1011,46 +1145,51 @@ final class GapDrawable extends Drawable {
 
 		fmt.Sprintf("android/app/src/main/java/dev/gonative/%s/MainActivity.java", pkg): fmt.Sprintf(`package dev.gonative.%s;
 
-import android.animation.Animator;
-import android.animation.AnimatorSet;
-import android.animation.ObjectAnimator;
-import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.graphics.Typeface;
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.TextWatcher;
+import android.os.Looper;
 import android.util.LongSparseArray;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.MotionEvent;
-import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.EditText;
+import android.widget.Switch;
+import android.widget.ProgressBar;
+import android.widget.CompoundButton;
+import android.widget.ImageView;
+import android.widget.ScrollView;
+import android.widget.HorizontalScrollView;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.animation.Animator;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
+import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.LinearInterpolator;
 import android.view.animation.OvershootInterpolator;
-import android.widget.Button;
-import android.widget.CompoundButton;
-import android.widget.EditText;
-import android.widget.HorizontalScrollView;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.ProgressBar;
-import android.widget.ScrollView;
-import android.widget.Switch;
-import android.widget.TextView;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.WeakHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.WeakHashMap;
 
 public final class MainActivity extends Activity {
     private static final int CREATE = 1;
@@ -1075,6 +1214,14 @@ public final class MainActivity extends Activity {
     private final LongSparseArray<View> views = new LongSparseArray<>();
     private final LongSparseArray<GestureBinding> gestureBindings = new LongSparseArray<>();
     private final WeakHashMap<EditText, TextWatcher> textWatchers = new WeakHashMap<>();
+    private long rootNodeID;
+    private float lastViewportWidth, lastViewportHeight, lastViewportScale;
+    private final View.OnLayoutChangeListener viewportListener = new View.OnLayoutChangeListener() {
+        @Override public void onLayoutChange(View view, int left, int top, int right, int bottom,
+                                             int oldLeft, int oldTop, int oldRight, int oldBottom) {
+            reportViewport(view);
+        }
+    };
 
     private native void nativeStart();
     private native void nativeDispatchEvent(long handler);
@@ -1082,15 +1229,31 @@ public final class MainActivity extends Activity {
     private native void nativeDispatchBoolEvent(long handler, boolean value);
     private native void nativeDispatchGestureEvent(long handler, float translationX, float translationY, float velocityX, float velocityY);
     private native void nativeStop();
+    private native void nativeSetLifecycle(int state);
+    private native void nativeDispatchFocus(long nodeID, boolean focused);
+    private native void nativeUpdateViewport(float width, float height, float scale);
     private native void nativeReportBatchApplied(long sequence, long nativeNanos);
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().getDecorView().setBackgroundColor(android.graphics.Color.WHITE);
         nativeStart();
+        nativeSetLifecycle(0);
+        View content = findViewById(android.R.id.content);
+        content.addOnLayoutChangeListener(viewportListener);
+        content.post(new Runnable() { @Override public void run() { reportViewport(findViewById(android.R.id.content)); } });
     }
 
+    @Override protected void onStart() { super.onStart(); nativeSetLifecycle(1); }
+    @Override protected void onResume() { super.onResume(); nativeSetLifecycle(2); }
+    @Override protected void onPause() { nativeSetLifecycle(3); super.onPause(); }
+    @Override protected void onStop() { nativeSetLifecycle(4); super.onStop(); }
+    @Override public void onLowMemory() { nativeSetLifecycle(5); super.onLowMemory(); }
+
     @Override protected void onDestroy() {
+        nativeSetLifecycle(6);
+        View content = findViewById(android.R.id.content);
+        if (content != null) content.removeOnLayoutChangeListener(viewportListener);
         nativeStop();
         for (int i = 0; i < gestureBindings.size(); i++) gestureBindings.valueAt(i).dispose();
         gestureBindings.clear();
@@ -1098,6 +1261,134 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < views.size(); i++) views.valueAt(i).animate().cancel();
         views.clear();
         super.onDestroy();
+    }
+
+    private void reportViewport(View content) {
+        if (content == null || content.getWidth() <= 0 || content.getHeight() <= 0) return;
+        float scale = getResources().getDisplayMetrics().density;
+        float width = content.getWidth() / scale, height = content.getHeight() / scale;
+        if (width == lastViewportWidth && height == lastViewportHeight && scale == lastViewportScale) return;
+        lastViewportWidth = width; lastViewportHeight = height; lastViewportScale = scale;
+        nativeUpdateViewport(width, height, scale);
+    }
+
+    @SuppressWarnings("unused")
+    public byte[] measureNativeBatch(final byte[] payload) {
+        if (payload == null || payload.length == 0 || payload.length > 16777216) return null;
+        if (Looper.myLooper() == Looper.getMainLooper()) return measureNativeBatchOnUiThread(payload.clone());
+        final AtomicReference<byte[]> result = new AtomicReference<>();
+        final CountDownLatch ready = new CountDownLatch(1);
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                try { result.set(measureNativeBatchOnUiThread(payload.clone())); }
+                finally { ready.countDown(); }
+            }
+        });
+        try {
+            return ready.await(10, TimeUnit.SECONDS) ? result.get() : null;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
+    private byte[] measureNativeBatchOnUiThread(byte[] payload) {
+        try {
+            ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+            if (in.remaining() < 6 || Short.toUnsignedInt(in.getShort()) != 1) return null;
+            int count = in.getInt();
+            if (count < 0 || count > 100000) return null;
+            ArrayList<NativeMeasurement> measured = new ArrayList<>(count);
+            for (int i = 0; i < count; i++) {
+                if (in.remaining() < 25) return null;
+                long id = in.getLong();
+                int kind = Byte.toUnsignedInt(in.get());
+                float minWidth = in.getFloat(), maxWidth = in.getFloat(), minHeight = in.getFloat(), maxHeight = in.getFloat();
+                String text = readRequiredString(in);
+                String imageSource = readRequiredString(in);
+                if (in.remaining() < 4) return null;
+                int styleLength = in.getInt();
+                if (styleLength < 0 || styleLength > 1048576 || styleLength > in.remaining()) return null;
+                byte[] typedStyle = new byte[styleLength];
+                in.get(typedStyle);
+                measured.add(measureNativeControl(id, kind, text, imageSource, typedStyle, minWidth, maxWidth, minHeight, maxHeight));
+            }
+            if (in.hasRemaining()) return null;
+            int capacity = 6;
+            for (NativeMeasurement item : measured) capacity += 20 + item.error.getBytes(StandardCharsets.UTF_8).length;
+            ByteBuffer out = ByteBuffer.allocate(capacity).order(ByteOrder.LITTLE_ENDIAN);
+            out.putShort((short) 1).putInt(measured.size());
+            for (NativeMeasurement item : measured) {
+                byte[] error = item.error.getBytes(StandardCharsets.UTF_8);
+                out.putLong(item.id).putFloat(item.width).putFloat(item.height).putInt(error.length).put(error);
+            }
+            return out.array();
+        } catch (Throwable error) {
+            android.util.Log.e("GoNative", "Native measurement batch failed", error);
+            return null;
+        }
+    }
+
+    private NativeMeasurement measureNativeControl(long id, int kind, String text, String imageSource, byte[] typedStyle,
+                                                    float minWidth, float maxWidth, float minHeight, float maxHeight) {
+        try {
+            View view = makeView(kind, false);
+            if (view instanceof TextView) {
+                TextView label = (TextView) view;
+                label.setText(text);
+                label.setIncludeFontPadding(false);
+                if (view instanceof Button) {
+                    Button button = (Button) view;
+                    button.setAllCaps(false);
+                    button.setMinWidth(0);
+                    button.setMinimumWidth(0);
+                    button.setMinHeight(dp(44));
+                    button.setMinimumHeight(dp(44));
+                    button.setPadding(dp(16), 0, dp(16), 0);
+                }
+                if (view instanceof EditText) {
+                    EditText field = (EditText) view;
+                    field.setSingleLine(true);
+                    field.setMinWidth(dp(240));
+                    field.setMinimumWidth(dp(240));
+                    field.setMinHeight(dp(44));
+                    field.setMinimumHeight(dp(44));
+                    field.setPadding(dp(12), dp(8), dp(12), dp(8));
+                }
+            }
+            if (view instanceof ImageView && imageSource != null && !imageSource.isEmpty()) {
+                int resource = getResources().getIdentifier(imageSource, "drawable", getPackageName());
+                if (resource == 0) resource = getResources().getIdentifier(imageSource, "mipmap", getPackageName());
+                if (resource != 0) ((ImageView) view).setImageResource(resource);
+            }
+            applyTypedStyle(view, typedStyle);
+            int widthSpec = nativeMeasureSpec(maxWidth);
+            int heightSpec = nativeMeasureSpec(maxHeight);
+            view.measure(widthSpec, heightSpec);
+            float density = getResources().getDisplayMetrics().density;
+            float width = Math.max(finiteNonNegative(minWidth), view.getMeasuredWidth() / density);
+            float height = Math.max(finiteNonNegative(minHeight), view.getMeasuredHeight() / density);
+            // Normalized control shells are configured before measurement. An
+            // explicit maximum remains authoritative for compact variants.
+            if (isFinite(maxWidth) && maxWidth >= 0) width = Math.min(width, maxWidth);
+            if (isFinite(maxHeight) && maxHeight >= 0) height = Math.min(height, maxHeight);
+            return new NativeMeasurement(id, width, height, "");
+        } catch (Throwable error) {
+            return new NativeMeasurement(id, 0, 0, error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage()));
+        }
+    }
+
+    private int nativeMeasureSpec(float maximum) {
+        if (!isFinite(maximum) || maximum <= 0) return View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+        return View.MeasureSpec.makeMeasureSpec(dp(maximum), View.MeasureSpec.AT_MOST);
+    }
+
+    private static boolean isFinite(float value) { return !Float.isNaN(value) && !Float.isInfinite(value); }
+    private static float finiteNonNegative(float value) { return isFinite(value) ? Math.max(0, value) : 0; }
+
+    private static final class NativeMeasurement {
+        final long id; final float width, height; final String error;
+        NativeMeasurement(long id, float width, float height, String error) { this.id = id; this.width = width; this.height = height; this.error = error == null ? "" : error; }
     }
 
     @SuppressWarnings("unused")
@@ -1114,7 +1405,7 @@ public final class MainActivity extends Activity {
             long started = System.nanoTime();
             ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
             if (in.remaining() < 14) return;
-            if (Short.toUnsignedInt(in.getShort()) != 8) return;
+            if (Short.toUnsignedInt(in.getShort()) != 9) return;
             int count = in.getInt();
             long sequence = in.getLong();
             for (int operation = 0; operation < count && in.hasRemaining(); operation++) {
@@ -1152,14 +1443,23 @@ public final class MainActivity extends Activity {
                 if (styleLength < 0 || styleLength > 1048576 || styleLength > in.remaining()) return;
                 byte[] typedStyle = new byte[styleLength];
                 in.get(typedStyle);
+                if (in.remaining() < 17) return;
+                boolean hasFrame = in.get() != 0;
+                float frameX = in.getFloat(), frameY = in.getFloat(), frameWidth = in.getFloat(), frameHeight = in.getFloat();
                 View view = views.get(nodeID);
 
                 if (mutation == CREATE) {
                     view = makeView(kind, horizontal);
                     view.setTag(nodeID);
+                    final long focusNodeID = nodeID;
+                    view.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+                        @Override public void onFocusChange(View changed, boolean hasFocus) { nativeDispatchFocus(focusNodeID, hasFocus); }
+                    });
                     views.put(nodeID, view);
+                    if (rootNodeID == 0) rootNodeID = nodeID;
                     style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
                     applyTypedStyle(view, typedStyle);
+                    applyComputedFrame(nodeID, view, hasFrame, frameX, frameY, frameWidth, frameHeight);
                     applyInteractions(nodeID, view, interactions);
                     if (views.size() == 1) {
                         view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -1170,6 +1470,7 @@ public final class MainActivity extends Activity {
                     if (view != null) {
                         style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
                         applyTypedStyle(view, typedStyle);
+                        applyComputedFrame(nodeID, view, hasFrame, frameX, frameY, frameWidth, frameHeight);
                         applyInteractions(nodeID, view, interactions);
                     }
                 } else if (mutation == INSERT) {
@@ -1208,13 +1509,32 @@ public final class MainActivity extends Activity {
                     gestureBindings.remove(nodeID);
                     if (view != null) view.animate().cancel();
                     views.remove(nodeID);
+                    if (nodeID == rootNodeID) rootNodeID = 0;
                 }
+                // Retained in the cross-platform protocol for renderer diagnostics.
                 if (fromIndex == Integer.MIN_VALUE) throw new AssertionError();
             }
             nativeReportBatchApplied(sequence, System.nanoTime() - started);
         } catch (Throwable t) {
             android.util.Log.e("GoNative", "Error applying mutation batch", t);
         }
+    }
+
+    private void applyComputedFrame(long nodeID, View view, boolean hasFrame, float x, float y, float width, float height) {
+        if (!hasFrame || view == null || nodeID == rootNodeID) return;
+        if (!isFinite(x) || !isFinite(y) || !isFinite(width) || !isFinite(height) || width < 0 || height < 0) return;
+        int measuredWidth = dp(Math.min(width, 1000000f));
+        int measuredHeight = dp(Math.min(height, 1000000f));
+        ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (params == null) params = new ViewGroup.LayoutParams(measuredWidth, measuredHeight);
+        params.width = measuredWidth;
+        params.height = measuredHeight;
+        view.setLayoutParams(params);
+        final float targetX = Math.max(-1000000f, Math.min(1000000f, x));
+        final float targetY = Math.max(-1000000f, Math.min(1000000f, y));
+        view.post(new Runnable() {
+            @Override public void run() { view.setX(dp(targetX)); view.setY(dp(targetY)); }
+        });
     }
 
     private View makeView(int kind, boolean horizontal) {
@@ -1249,11 +1569,29 @@ public final class MainActivity extends Activity {
         if (view == null || payload == null || payload.length < 187) return;
         ByteBuffer style = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
         if (Short.toUnsignedInt(style.getShort(0)) != 1) return;
-        int background = rgba(style, 114), foreground = rgba(style, 118);
-        float borderWidth = style.getFloat(122), cornerRadius = style.getFloat(130), opacity = style.getFloat(158);
-        int borderColor = rgba(style, 126), visibility = Byte.toUnsignedInt(style.get(182));
-        int fontLength = style.getInt(183), disabledOffset = 205 + fontLength;
+        int portable = 2, ios = portable + typedStyleSize(style, portable, payload.length), androidStyle = ios + typedStyleSize(style, ios, payload.length);
+        if (androidStyle <= ios || androidStyle >= payload.length || typedStyleSize(style, androidStyle, payload.length) == 0) return;
+        int appearanceBase = hasTypedValues(payload, androidStyle + 112, 69) ? androidStyle + 112 : portable + 112;
+        int androidFontLength = style.getInt(androidStyle + 181);
+        int textBase = hasTypedValues(payload, androidStyle + 181, 22 + Math.max(0, androidFontLength)) ? androidStyle : portable;
+        int fontLength = style.getInt(textBase + 181), interactionBase = hasTypedValues(payload, androidStyle + 203 + Math.max(0, androidFontLength), 17) ? androidStyle : portable;
+        int background = rgba(style, appearanceBase), foreground = rgba(style, appearanceBase + 4);
+        float borderWidth = style.getFloat(appearanceBase + 8), cornerRadius = style.getFloat(appearanceBase + 16), opacity = style.getFloat(appearanceBase + 44);
+        int borderColor = rgba(style, appearanceBase + 12), visibility = Byte.toUnsignedInt(style.get(appearanceBase + 68));
+        int disabledOffset = interactionBase + 203 + style.getInt(interactionBase + 181);
         if (fontLength < 0 || disabledOffset >= payload.length) return;
+        int fontOffset = textBase + 185 + fontLength;
+        float fontSize = style.getFloat(fontOffset), lineHeight = style.getFloat(fontOffset + 6), letterSpacing = style.getFloat(fontOffset + 10);
+        int fontWeight = Short.toUnsignedInt(style.getShort(fontOffset + 4));
+        if (view instanceof TextView) {
+            TextView text = (TextView) view;
+            String family = new String(payload, textBase + 185, fontLength, java.nio.charset.StandardCharsets.UTF_8);
+            Typeface face = family.isEmpty() ? Typeface.DEFAULT : Typeface.create(family, Typeface.NORMAL);
+            text.setTypeface(face, fontWeight >= 600 ? Typeface.BOLD : Typeface.NORMAL);
+            if (fontSize > 0) text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, fontSize);
+            if (lineHeight > 0 && android.os.Build.VERSION.SDK_INT >= 28) text.setLineHeight(dp(lineHeight));
+            if (letterSpacing != 0 && fontSize > 0) text.setLetterSpacing(letterSpacing / fontSize);
+        }
         if (android.graphics.Color.alpha(background) > 0 || borderWidth > 0) {
             android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
             drawable.setColor(background);
@@ -1263,12 +1601,30 @@ public final class MainActivity extends Activity {
         }
         if (view instanceof TextView && android.graphics.Color.alpha(foreground) > 0) ((TextView) view).setTextColor(foreground);
         if (opacity > 0) view.setAlpha(Math.min(1f, opacity));
+        float translateX = style.getFloat(appearanceBase + 48), translateY = style.getFloat(appearanceBase + 52), scaleX = style.getFloat(appearanceBase + 56), scaleY = style.getFloat(appearanceBase + 60), rotation = style.getFloat(appearanceBase + 64);
+        view.setTranslationX(dp(translateX)); view.setTranslationY(dp(translateY));
+        view.setScaleX(scaleX == 0 ? 1 : scaleX); view.setScaleY(scaleY == 0 ? 1 : scaleY); view.setRotation(rotation);
+        float shadowBlur = style.getFloat(appearanceBase + 32), shadowOpacity = style.getFloat(appearanceBase + 40);
+        if (shadowBlur > 0 && shadowOpacity > 0) view.setElevation(dp(shadowBlur));
         view.setVisibility(visibility == 2 ? View.GONE : visibility == 1 ? View.INVISIBLE : View.VISIBLE);
         view.setEnabled(style.get(disabledOffset) == 0);
     }
 
     private int rgba(ByteBuffer style, int offset) {
         return android.graphics.Color.argb(Byte.toUnsignedInt(style.get(offset + 3)), Byte.toUnsignedInt(style.get(offset)), Byte.toUnsignedInt(style.get(offset + 1)), Byte.toUnsignedInt(style.get(offset + 2)));
+    }
+
+    private int typedStyleSize(ByteBuffer style, int base, int limit) {
+        if (base < 0 || base + 185 > limit) return 0;
+        int fontLength = style.getInt(base + 181);
+        int size = 220 + fontLength;
+        return fontLength < 0 || base + size > limit ? 0 : size;
+    }
+
+    private boolean hasTypedValues(byte[] payload, int offset, int length) {
+        if (offset < 0 || length < 0 || offset + length > payload.length) return false;
+        for (int i = offset; i < offset + length; i++) if (payload[i] != 0) return true;
+        return false;
     }
 
     private void style(View view, int kind, String text, float width, float height, float padding,
@@ -1401,6 +1757,8 @@ public final class MainActivity extends Activity {
         if (focused) {
             view.requestFocus();
             view.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED);
+        } else if (view.hasFocus()) {
+            view.clearFocus();
         }
         ViewGroup.LayoutParams current = view.getLayoutParams();
         int requestedWidth = width > 0 ? dp(width) : ViewGroup.LayoutParams.WRAP_CONTENT;
@@ -1539,6 +1897,15 @@ public final class MainActivity extends Activity {
         in.get(bytes);
         return new String(bytes, StandardCharsets.UTF_8);
     }
+
+    private static String readRequiredString(ByteBuffer in) {
+        if (in.remaining() < 4) throw new IllegalArgumentException("missing string length");
+        int length = in.getInt();
+        if (length < 0 || length > 1048576 || length > in.remaining()) throw new IllegalArgumentException("invalid string length");
+        byte[] bytes = new byte[length];
+        in.get(bytes);
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
 }
 `, pkg),
 
@@ -1548,19 +1915,24 @@ package main
 
 /*
 #include <stdint.h>
+#include <stdlib.h>
 void GNAndroidApplyMutationBatch(const uint8_t *bytes, int32_t length);
+int32_t GNAndroidMeasureBatch(const uint8_t *bytes, int32_t length, uint8_t **result);
+void GNAndroidFreeBuffer(uint8_t *bytes);
 */
 import "C"
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
 	"unsafe"
 
-	"%s"
 	gnruntime "github.com/go-native/go-native/runtime"
+	"github.com/go-native/go-native/runtime/layout"
 	"github.com/go-native/go-native/ui"
+	"%s"
 )
 
 var benchmarkOutput string
@@ -1579,13 +1951,73 @@ func (androidRenderer) Apply(batch gnruntime.MutationBatch) error {
 	return nil
 }
 
+func (androidRenderer) MeasureBatch(ctx context.Context, requests []layout.MeasurementRequest) ([]layout.MeasurementResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	payload, err := layout.MarshalMeasurementRequests(requests)
+	if err != nil {
+		return nil, err
+	}
+	if len(payload) == 0 {
+		return nil, errors.New("android measurement: empty request batch")
+	}
+	var result *C.uint8_t
+	length := C.GNAndroidMeasureBatch((*C.uint8_t)(unsafe.Pointer(&payload[0])), C.int32_t(len(payload)), &result)
+	if length <= 0 || result == nil {
+		return nil, fmt.Errorf("android measurement: native adapter unavailable (%%d)", int32(length))
+	}
+	defer C.GNAndroidFreeBuffer(result)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return layout.UnmarshalMeasurementResults(C.GoBytes(unsafe.Pointer(result), C.int(length)))
+}
+
 var appRuntime *gnruntime.Runtime
 
 //export GoNativeAndroidStart
 func GoNativeAndroidStart() {
-	appRuntime = gnruntime.New(app.App, androidRenderer{})
+	renderer := androidRenderer{}
+	appRuntime = gnruntime.New(app.App, renderer)
+	appRuntime.SetLayoutProvider(&layout.Pipeline{Measurer: renderer, Cache: layout.NewMeasurementCache()})
 	if err := appRuntime.Start(); err != nil {
 		panic(err)
+	}
+}
+
+//export GoNativeAndroidUpdateViewport
+func GoNativeAndroidUpdateViewport(width, height, scale C.float) {
+	if appRuntime == nil || width <= 0 || height <= 0 || scale <= 0 {
+		return
+	}
+	current := appRuntime.Environment().MediaQuery
+	if current.Viewport.Width == float32(width) && current.Viewport.Height == float32(height) && current.Scale == float32(scale) {
+		return
+	}
+	appRuntime.UpdateEnvironment(func(environment ui.Environment) ui.Environment {
+		environment.MediaQuery.Viewport = ui.Size{Width: float32(width), Height: float32(height)}
+		environment.MediaQuery.Scale = float32(scale)
+		if width > height {
+			environment.MediaQuery.Orientation = ui.OrientationLandscape
+		} else {
+			environment.MediaQuery.Orientation = ui.OrientationPortrait
+		}
+		return environment
+	})
+}
+
+//export GoNativeAndroidSetLifecycle
+func GoNativeAndroidSetLifecycle(state C.uint8_t) {
+	if appRuntime != nil {
+		appRuntime.SetLifecycle(ui.LifecycleState(state))
+	}
+}
+
+//export GoNativeAndroidDispatchFocus
+func GoNativeAndroidDispatchFocus(nodeID C.uint64_t, focused C.uint8_t) {
+	if appRuntime != nil {
+		appRuntime.DispatchFocus(ui.NodeID(nodeID), focused != 0)
 	}
 }
 
@@ -1665,10 +2097,14 @@ extern void GoNativeAndroidDispatchBoolEvent(uint64_t handler, uint8_t value);
 extern void GoNativeAndroidDispatchGestureEvent(uint64_t handler, float translationX, float translationY, float velocityX, float velocityY);
 extern void GoNativeAndroidStop(void);
 extern void GoNativeAndroidReportBatchApplied(uint64_t sequence, uint64_t nativeNanos);
+extern void GoNativeAndroidSetLifecycle(uint8_t state);
+extern void GoNativeAndroidDispatchFocus(uint64_t nodeID, uint8_t focused);
+extern void GoNativeAndroidUpdateViewport(float width, float height, float scale);
 
 static JavaVM *gn_vm;
 static jobject gn_renderer;
 static jmethodID gn_apply;
+static jmethodID gn_measure;
 static pthread_mutex_t gn_renderer_mu = PTHREAD_MUTEX_INITIALIZER;
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
@@ -1686,9 +2122,31 @@ Java_dev_gonative_%s_MainActivity_nativeStart(JNIEnv *env, jobject renderer) {
     gn_renderer = (*env)->NewGlobalRef(env, renderer);
     jclass cls = (*env)->GetObjectClass(env, renderer);
     gn_apply = (*env)->GetMethodID(env, cls, "applyMutationBatch", "([B)V");
+    gn_measure = (*env)->GetMethodID(env, cls, "measureNativeBatch", "([B)[B");
     (*env)->DeleteLocalRef(env, cls);
     pthread_mutex_unlock(&gn_renderer_mu);
     GoNativeAndroidStart();
+}
+
+JNIEXPORT void JNICALL
+Java_dev_gonative_%s_MainActivity_nativeSetLifecycle(JNIEnv *env, jobject renderer, jint state) {
+    (void)env;
+    (void)renderer;
+    if (state >= 0 && state <= 6) GoNativeAndroidSetLifecycle((uint8_t)state);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_gonative_%s_MainActivity_nativeDispatchFocus(JNIEnv *env, jobject renderer, jlong nodeID, jboolean focused) {
+    (void)env;
+    (void)renderer;
+    GoNativeAndroidDispatchFocus((uint64_t)nodeID, focused ? 1 : 0);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_gonative_%s_MainActivity_nativeUpdateViewport(JNIEnv *env, jobject renderer, jfloat width, jfloat height, jfloat scale) {
+    (void)env;
+    (void)renderer;
+    GoNativeAndroidUpdateViewport((float)width, (float)height, (float)scale);
 }
 
 JNIEXPORT void JNICALL
@@ -1728,8 +2186,53 @@ Java_dev_gonative_%s_MainActivity_nativeStop(JNIEnv *env, jobject renderer) {
         gn_renderer = NULL;
     }
     gn_apply = NULL;
+    gn_measure = NULL;
     pthread_mutex_unlock(&gn_renderer_mu);
 }
+
+int32_t GNAndroidMeasureBatch(const uint8_t *bytes, int32_t length, uint8_t **result) {
+    if (result) *result = NULL;
+    if (!gn_vm || !result || !bytes || length <= 0) return -1;
+    JNIEnv *env = NULL;
+    int attached = 0;
+    jint status = (*gn_vm)->GetEnv(gn_vm, (void **)&env, JNI_VERSION_1_6);
+    if (status == JNI_EDETACHED) {
+        if ((*gn_vm)->AttachCurrentThread(gn_vm, &env, NULL) != JNI_OK) return -2;
+        attached = 1;
+    } else if (status != JNI_OK) return -2;
+    int32_t result_length = -3;
+    pthread_mutex_lock(&gn_renderer_mu);
+    if (gn_renderer && gn_measure) {
+        jbyteArray request = (*env)->NewByteArray(env, length);
+        if (request) {
+            (*env)->SetByteArrayRegion(env, request, 0, length, (const jbyte *)bytes);
+            jbyteArray response = (jbyteArray)(*env)->CallObjectMethod(env, gn_renderer, gn_measure, request);
+            if (!(*env)->ExceptionCheck(env) && response) {
+                jsize response_length = (*env)->GetArrayLength(env, response);
+                if (response_length > 0 && response_length <= 16777216) {
+                    uint8_t *copy = (uint8_t *)malloc((size_t)response_length);
+                    if (copy) {
+                        (*env)->GetByteArrayRegion(env, response, 0, response_length, (jbyte *)copy);
+                        *result = copy;
+                        result_length = (int32_t)response_length;
+                    } else result_length = -4;
+                }
+                (*env)->DeleteLocalRef(env, response);
+            }
+            (*env)->DeleteLocalRef(env, request);
+        }
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionDescribe(env);
+            (*env)->ExceptionClear(env);
+            result_length = -5;
+        }
+    }
+    pthread_mutex_unlock(&gn_renderer_mu);
+    if (attached) (*gn_vm)->DetachCurrentThread(gn_vm);
+    return result_length;
+}
+
+void GNAndroidFreeBuffer(uint8_t *bytes) { free(bytes); }
 
 JNIEXPORT void JNICALL
 Java_dev_gonative_%s_MainActivity_nativeReportBatchApplied(JNIEnv *env, jobject renderer, jlong sequence, jlong nativeNanos) {
@@ -1774,7 +2277,7 @@ void GNAndroidApplyMutationBatch(const uint8_t *bytes, int32_t length) {
         (*gn_vm)->DetachCurrentThread(gn_vm);
     }
 }
-`, jniPkg, jniPkg, jniPkg, jniPkg, jniPkg, jniPkg, jniPkg),
+`, jniPkg, jniPkg, jniPkg, jniPkg, jniPkg, jniPkg, jniPkg, jniPkg, jniPkg, jniPkg),
 
 		"android/bridge/stub.go": `//go:build !android
 

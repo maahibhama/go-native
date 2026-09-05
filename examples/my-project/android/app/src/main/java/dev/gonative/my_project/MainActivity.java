@@ -3,6 +3,7 @@ package dev.gonative.my_project;
 import android.app.Activity;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.os.Looper;
 import android.util.LongSparseArray;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -37,6 +38,9 @@ import android.view.animation.OvershootInterpolator;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.WeakHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -65,6 +69,14 @@ public final class MainActivity extends Activity {
     private final LongSparseArray<View> views = new LongSparseArray<>();
     private final LongSparseArray<GestureBinding> gestureBindings = new LongSparseArray<>();
     private final WeakHashMap<EditText, TextWatcher> textWatchers = new WeakHashMap<>();
+    private long rootNodeID;
+    private float lastViewportWidth, lastViewportHeight, lastViewportScale;
+    private final View.OnLayoutChangeListener viewportListener = new View.OnLayoutChangeListener() {
+        @Override public void onLayoutChange(View view, int left, int top, int right, int bottom,
+                                             int oldLeft, int oldTop, int oldRight, int oldBottom) {
+            reportViewport(view);
+        }
+    };
 
     private native void nativeStart();
     private native void nativeDispatchEvent(long handler);
@@ -72,15 +84,31 @@ public final class MainActivity extends Activity {
     private native void nativeDispatchBoolEvent(long handler, boolean value);
     private native void nativeDispatchGestureEvent(long handler, float translationX, float translationY, float velocityX, float velocityY);
     private native void nativeStop();
+    private native void nativeSetLifecycle(int state);
+    private native void nativeDispatchFocus(long nodeID, boolean focused);
+    private native void nativeUpdateViewport(float width, float height, float scale);
     private native void nativeReportBatchApplied(long sequence, long nativeNanos);
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().getDecorView().setBackgroundColor(android.graphics.Color.WHITE);
         nativeStart();
+        nativeSetLifecycle(0);
+        View content = findViewById(android.R.id.content);
+        content.addOnLayoutChangeListener(viewportListener);
+        content.post(new Runnable() { @Override public void run() { reportViewport(findViewById(android.R.id.content)); } });
     }
 
+    @Override protected void onStart() { super.onStart(); nativeSetLifecycle(1); }
+    @Override protected void onResume() { super.onResume(); nativeSetLifecycle(2); }
+    @Override protected void onPause() { nativeSetLifecycle(3); super.onPause(); }
+    @Override protected void onStop() { nativeSetLifecycle(4); super.onStop(); }
+    @Override public void onLowMemory() { nativeSetLifecycle(5); super.onLowMemory(); }
+
     @Override protected void onDestroy() {
+        nativeSetLifecycle(6);
+        View content = findViewById(android.R.id.content);
+        if (content != null) content.removeOnLayoutChangeListener(viewportListener);
         nativeStop();
         for (int i = 0; i < gestureBindings.size(); i++) gestureBindings.valueAt(i).dispose();
         gestureBindings.clear();
@@ -88,6 +116,132 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < views.size(); i++) views.valueAt(i).animate().cancel();
         views.clear();
         super.onDestroy();
+    }
+
+    private void reportViewport(View content) {
+        if (content == null || content.getWidth() <= 0 || content.getHeight() <= 0) return;
+        float scale = getResources().getDisplayMetrics().density;
+        float width = content.getWidth() / scale, height = content.getHeight() / scale;
+        if (width == lastViewportWidth && height == lastViewportHeight && scale == lastViewportScale) return;
+        lastViewportWidth = width; lastViewportHeight = height; lastViewportScale = scale;
+        nativeUpdateViewport(width, height, scale);
+    }
+
+    @SuppressWarnings("unused")
+    public byte[] measureNativeBatch(final byte[] payload) {
+        if (payload == null || payload.length == 0 || payload.length > 16777216) return null;
+        if (Looper.myLooper() == Looper.getMainLooper()) return measureNativeBatchOnUiThread(payload.clone());
+        final AtomicReference<byte[]> result = new AtomicReference<>();
+        final CountDownLatch ready = new CountDownLatch(1);
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                try { result.set(measureNativeBatchOnUiThread(payload.clone())); }
+                finally { ready.countDown(); }
+            }
+        });
+        try {
+            return ready.await(10, TimeUnit.SECONDS) ? result.get() : null;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
+    private byte[] measureNativeBatchOnUiThread(byte[] payload) {
+        try {
+            ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+            if (in.remaining() < 6 || Short.toUnsignedInt(in.getShort()) != 1) return null;
+            int count = in.getInt();
+            if (count < 0 || count > 100000) return null;
+            ArrayList<NativeMeasurement> measured = new ArrayList<>(count);
+            for (int i = 0; i < count; i++) {
+                if (in.remaining() < 25) return null;
+                long id = in.getLong();
+                int kind = Byte.toUnsignedInt(in.get());
+                float minWidth = in.getFloat(), maxWidth = in.getFloat(), minHeight = in.getFloat(), maxHeight = in.getFloat();
+                String text = readRequiredString(in);
+                String imageSource = readRequiredString(in);
+                if (in.remaining() < 4) return null;
+                int styleLength = in.getInt();
+                if (styleLength < 0 || styleLength > 1048576 || styleLength > in.remaining()) return null;
+                byte[] typedStyle = new byte[styleLength];
+                in.get(typedStyle);
+                measured.add(measureNativeControl(id, kind, text, imageSource, typedStyle, minWidth, maxWidth, minHeight, maxHeight));
+            }
+            if (in.hasRemaining()) return null;
+            int capacity = 6;
+            for (NativeMeasurement item : measured) capacity += 20 + item.error.getBytes(StandardCharsets.UTF_8).length;
+            ByteBuffer out = ByteBuffer.allocate(capacity).order(ByteOrder.LITTLE_ENDIAN);
+            out.putShort((short) 1).putInt(measured.size());
+            for (NativeMeasurement item : measured) {
+                byte[] error = item.error.getBytes(StandardCharsets.UTF_8);
+                out.putLong(item.id).putFloat(item.width).putFloat(item.height).putInt(error.length).put(error);
+            }
+            return out.array();
+        } catch (Throwable error) {
+            android.util.Log.e("GoNative", "Native measurement batch failed", error);
+            return null;
+        }
+    }
+
+    private NativeMeasurement measureNativeControl(long id, int kind, String text, String imageSource, byte[] typedStyle,
+                                                    float minWidth, float maxWidth, float minHeight, float maxHeight) {
+        try {
+            View view = makeView(kind, false);
+            if (view instanceof TextView) {
+                TextView label = (TextView) view;
+                label.setText(text);
+                label.setIncludeFontPadding(false);
+                if (view instanceof Button) {
+                    Button button = (Button) view;
+                    button.setAllCaps(false);
+                    button.setMinWidth(0);
+                    button.setMinimumWidth(0);
+                    button.setMinHeight(dp(44));
+                    button.setMinimumHeight(dp(44));
+                    button.setPadding(dp(16), 0, dp(16), 0);
+                }
+                if (view instanceof EditText) {
+                    EditText field = (EditText) view;
+                    field.setSingleLine(true);
+                    field.setMinWidth(dp(240));
+                    field.setMinimumWidth(dp(240));
+                    field.setMinHeight(dp(44));
+                    field.setMinimumHeight(dp(44));
+                    field.setPadding(dp(12), dp(8), dp(12), dp(8));
+                }
+            }
+            if (view instanceof ImageView && imageSource != null && !imageSource.isEmpty()) {
+                int resource = getResources().getIdentifier(imageSource, "drawable", getPackageName());
+                if (resource == 0) resource = getResources().getIdentifier(imageSource, "mipmap", getPackageName());
+                if (resource != 0) ((ImageView) view).setImageResource(resource);
+            }
+            applyTypedStyle(view, typedStyle);
+            int widthSpec = nativeMeasureSpec(maxWidth);
+            int heightSpec = nativeMeasureSpec(maxHeight);
+            view.measure(widthSpec, heightSpec);
+            float density = getResources().getDisplayMetrics().density;
+            float width = Math.max(finiteNonNegative(minWidth), view.getMeasuredWidth() / density);
+            float height = Math.max(finiteNonNegative(minHeight), view.getMeasuredHeight() / density);
+            if (isFinite(maxWidth) && maxWidth >= 0) width = Math.min(width, maxWidth);
+            if (isFinite(maxHeight) && maxHeight >= 0) height = Math.min(height, maxHeight);
+            return new NativeMeasurement(id, width, height, "");
+        } catch (Throwable error) {
+            return new NativeMeasurement(id, 0, 0, error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage()));
+        }
+    }
+
+    private int nativeMeasureSpec(float maximum) {
+        if (!isFinite(maximum) || maximum <= 0) return View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+        return View.MeasureSpec.makeMeasureSpec(dp(maximum), View.MeasureSpec.AT_MOST);
+    }
+
+    private static boolean isFinite(float value) { return !Float.isNaN(value) && !Float.isInfinite(value); }
+    private static float finiteNonNegative(float value) { return isFinite(value) ? Math.max(0, value) : 0; }
+
+    private static final class NativeMeasurement {
+        final long id; final float width, height; final String error;
+        NativeMeasurement(long id, float width, float height, String error) { this.id = id; this.width = width; this.height = height; this.error = error == null ? "" : error; }
     }
 
     @SuppressWarnings("unused")
@@ -104,7 +258,7 @@ public final class MainActivity extends Activity {
             long started = System.nanoTime();
             ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
             if (in.remaining() < 14) return;
-            if (Short.toUnsignedInt(in.getShort()) != 8) return;
+            if (Short.toUnsignedInt(in.getShort()) != 9) return;
             int count = in.getInt();
             long sequence = in.getLong();
             for (int operation = 0; operation < count && in.hasRemaining(); operation++) {
@@ -142,14 +296,23 @@ public final class MainActivity extends Activity {
                 if (styleLength < 0 || styleLength > 1048576 || styleLength > in.remaining()) return;
                 byte[] typedStyle = new byte[styleLength];
                 in.get(typedStyle);
+                if (in.remaining() < 17) return;
+                boolean hasFrame = in.get() != 0;
+                float frameX = in.getFloat(), frameY = in.getFloat(), frameWidth = in.getFloat(), frameHeight = in.getFloat();
                 View view = views.get(nodeID);
 
                 if (mutation == CREATE) {
                     view = makeView(kind, horizontal);
                     view.setTag(nodeID);
+                    final long focusNodeID = nodeID;
+                    view.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+                        @Override public void onFocusChange(View changed, boolean hasFocus) { nativeDispatchFocus(focusNodeID, hasFocus); }
+                    });
                     views.put(nodeID, view);
+                    if (rootNodeID == 0) rootNodeID = nodeID;
                     style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
                     applyTypedStyle(view, typedStyle);
+                    applyComputedFrame(nodeID, view, hasFrame, frameX, frameY, frameWidth, frameHeight);
                     applyInteractions(nodeID, view, interactions);
                     if (views.size() == 1) {
                         view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -160,6 +323,7 @@ public final class MainActivity extends Activity {
                     if (view != null) {
                         style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
                         applyTypedStyle(view, typedStyle);
+                        applyComputedFrame(nodeID, view, hasFrame, frameX, frameY, frameWidth, frameHeight);
                         applyInteractions(nodeID, view, interactions);
                     }
                 } else if (mutation == INSERT) {
@@ -198,6 +362,7 @@ public final class MainActivity extends Activity {
                     gestureBindings.remove(nodeID);
                     if (view != null) view.animate().cancel();
                     views.remove(nodeID);
+                    if (nodeID == rootNodeID) rootNodeID = 0;
                 }
                 // Retained in the cross-platform protocol for renderer diagnostics.
                 if (fromIndex == Integer.MIN_VALUE) throw new AssertionError();
@@ -206,6 +371,23 @@ public final class MainActivity extends Activity {
         } catch (Throwable t) {
             android.util.Log.e("GoNative", "Error applying mutation batch", t);
         }
+    }
+
+    private void applyComputedFrame(long nodeID, View view, boolean hasFrame, float x, float y, float width, float height) {
+        if (!hasFrame || view == null || nodeID == rootNodeID) return;
+        if (!isFinite(x) || !isFinite(y) || !isFinite(width) || !isFinite(height) || width < 0 || height < 0) return;
+        int measuredWidth = dp(Math.min(width, 1000000f));
+        int measuredHeight = dp(Math.min(height, 1000000f));
+        ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (params == null) params = new ViewGroup.LayoutParams(measuredWidth, measuredHeight);
+        params.width = measuredWidth;
+        params.height = measuredHeight;
+        view.setLayoutParams(params);
+        final float targetX = Math.max(-1000000f, Math.min(1000000f, x));
+        final float targetY = Math.max(-1000000f, Math.min(1000000f, y));
+        view.post(new Runnable() {
+            @Override public void run() { view.setX(dp(targetX)); view.setY(dp(targetY)); }
+        });
     }
 
     private View makeView(int kind, boolean horizontal) {
@@ -240,11 +422,29 @@ public final class MainActivity extends Activity {
         if (view == null || payload == null || payload.length < 187) return;
         ByteBuffer style = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
         if (Short.toUnsignedInt(style.getShort(0)) != 1) return;
-        int background = rgba(style, 114), foreground = rgba(style, 118);
-        float borderWidth = style.getFloat(122), cornerRadius = style.getFloat(130), opacity = style.getFloat(158);
-        int borderColor = rgba(style, 126), visibility = Byte.toUnsignedInt(style.get(182));
-        int fontLength = style.getInt(183), disabledOffset = 205 + fontLength;
+        int portable = 2, ios = portable + typedStyleSize(style, portable, payload.length), androidStyle = ios + typedStyleSize(style, ios, payload.length);
+        if (androidStyle <= ios || androidStyle >= payload.length || typedStyleSize(style, androidStyle, payload.length) == 0) return;
+        int appearanceBase = hasTypedValues(payload, androidStyle + 112, 69) ? androidStyle + 112 : portable + 112;
+        int androidFontLength = style.getInt(androidStyle + 181);
+        int textBase = hasTypedValues(payload, androidStyle + 181, 22 + Math.max(0, androidFontLength)) ? androidStyle : portable;
+        int fontLength = style.getInt(textBase + 181), interactionBase = hasTypedValues(payload, androidStyle + 203 + Math.max(0, androidFontLength), 17) ? androidStyle : portable;
+        int background = rgba(style, appearanceBase), foreground = rgba(style, appearanceBase + 4);
+        float borderWidth = style.getFloat(appearanceBase + 8), cornerRadius = style.getFloat(appearanceBase + 16), opacity = style.getFloat(appearanceBase + 44);
+        int borderColor = rgba(style, appearanceBase + 12), visibility = Byte.toUnsignedInt(style.get(appearanceBase + 68));
+        int disabledOffset = interactionBase + 203 + style.getInt(interactionBase + 181);
         if (fontLength < 0 || disabledOffset >= payload.length) return;
+        int fontOffset = textBase + 185 + fontLength;
+        float fontSize = style.getFloat(fontOffset), lineHeight = style.getFloat(fontOffset + 6), letterSpacing = style.getFloat(fontOffset + 10);
+        int fontWeight = Short.toUnsignedInt(style.getShort(fontOffset + 4));
+        if (view instanceof TextView) {
+            TextView text = (TextView) view;
+            String family = new String(payload, textBase + 185, fontLength, java.nio.charset.StandardCharsets.UTF_8);
+            Typeface face = family.isEmpty() ? Typeface.DEFAULT : Typeface.create(family, Typeface.NORMAL);
+            text.setTypeface(face, fontWeight >= 600 ? Typeface.BOLD : Typeface.NORMAL);
+            if (fontSize > 0) text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, fontSize);
+            if (lineHeight > 0 && android.os.Build.VERSION.SDK_INT >= 28) text.setLineHeight(dp(lineHeight));
+            if (letterSpacing != 0 && fontSize > 0) text.setLetterSpacing(letterSpacing / fontSize);
+        }
         if (android.graphics.Color.alpha(background) > 0 || borderWidth > 0) {
             android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
             drawable.setColor(background);
@@ -254,12 +454,30 @@ public final class MainActivity extends Activity {
         }
         if (view instanceof TextView && android.graphics.Color.alpha(foreground) > 0) ((TextView) view).setTextColor(foreground);
         if (opacity > 0) view.setAlpha(Math.min(1f, opacity));
+        float translateX = style.getFloat(appearanceBase + 48), translateY = style.getFloat(appearanceBase + 52), scaleX = style.getFloat(appearanceBase + 56), scaleY = style.getFloat(appearanceBase + 60), rotation = style.getFloat(appearanceBase + 64);
+        view.setTranslationX(dp(translateX)); view.setTranslationY(dp(translateY));
+        view.setScaleX(scaleX == 0 ? 1 : scaleX); view.setScaleY(scaleY == 0 ? 1 : scaleY); view.setRotation(rotation);
+        float shadowBlur = style.getFloat(appearanceBase + 32), shadowOpacity = style.getFloat(appearanceBase + 40);
+        if (shadowBlur > 0 && shadowOpacity > 0) view.setElevation(dp(shadowBlur));
         view.setVisibility(visibility == 2 ? View.GONE : visibility == 1 ? View.INVISIBLE : View.VISIBLE);
         view.setEnabled(style.get(disabledOffset) == 0);
     }
 
     private int rgba(ByteBuffer style, int offset) {
         return android.graphics.Color.argb(Byte.toUnsignedInt(style.get(offset + 3)), Byte.toUnsignedInt(style.get(offset)), Byte.toUnsignedInt(style.get(offset + 1)), Byte.toUnsignedInt(style.get(offset + 2)));
+    }
+
+    private int typedStyleSize(ByteBuffer style, int base, int limit) {
+        if (base < 0 || base + 185 > limit) return 0;
+        int fontLength = style.getInt(base + 181);
+        int size = 220 + fontLength;
+        return fontLength < 0 || base + size > limit ? 0 : size;
+    }
+
+    private boolean hasTypedValues(byte[] payload, int offset, int length) {
+        if (offset < 0 || length < 0 || offset + length > payload.length) return false;
+        for (int i = offset; i < offset + length; i++) if (payload[i] != 0) return true;
+        return false;
     }
 
     private void style(View view, int kind, String text, float width, float height, float padding,
@@ -392,6 +610,8 @@ public final class MainActivity extends Activity {
         if (focused) {
             view.requestFocus();
             view.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED);
+        } else if (view.hasFocus()) {
+            view.clearFocus();
         }
         ViewGroup.LayoutParams current = view.getLayoutParams();
         int requestedWidth = width > 0 ? dp(width) : ViewGroup.LayoutParams.WRAP_CONTENT;
@@ -526,6 +746,15 @@ public final class MainActivity extends Activity {
         if (in.remaining() < 4) return "";
         int length = in.getInt();
         if (length <= 0 || in.remaining() < length) return "";
+        byte[] bytes = new byte[length];
+        in.get(bytes);
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private static String readRequiredString(ByteBuffer in) {
+        if (in.remaining() < 4) throw new IllegalArgumentException("missing string length");
+        int length = in.getInt();
+        if (length < 0 || length > 1048576 || length > in.remaining()) throw new IllegalArgumentException("invalid string length");
         byte[] bytes = new byte[length];
         in.get(bytes);
         return new String(bytes, StandardCharsets.UTF_8);

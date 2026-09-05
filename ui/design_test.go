@@ -58,3 +58,12 @@ func TestResponsiveStyleAppliesMatchingBreakpointsInOrder(t *testing.T) {
 		t.Fatalf("resolved = %#v", resolved.Layout)
 	}
 }
+
+func TestResolvePlatformStyleFallsBackAndOverridesGroups(t *testing.T) {
+	portable := Style{Layout: LayoutStyle{Gap: 8}, Appearance: AppearanceStyle{Background: RGB(1, 2, 3), CornerRadius: 4}, Text: TextStyle{FontSize: 14}}
+	overrides := PlatformStyle{Android: Style{Appearance: AppearanceStyle{Background: RGB(9, 8, 7)}, Text: TextStyle{FontSize: 18}}}
+	got := ResolvePlatformStyle(portable, overrides, PlatformAndroid)
+	if got.Layout.Gap != 8 || got.Appearance.Background != RGB(9, 8, 7) || got.Appearance.CornerRadius != 0 || got.Text.FontSize != 18 {
+		t.Fatalf("resolved style = %#v", got)
+	}
+}

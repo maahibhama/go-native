@@ -23,6 +23,7 @@ const (
 	hookMemo
 	hookEffect
 	hookLayoutEffect
+	hookFocusNode
 )
 
 type hookSlot struct {
@@ -192,6 +193,14 @@ func (r *HookRegistry) Dispose() {
 
 func cleanupScope(scope *hookScope) {
 	for index := range scope.slots {
+		if node, ok := scope.slots[index].value.(*FocusNode); ok && node != nil {
+			node.mu.RLock()
+			manager := node.manager
+			node.mu.RUnlock()
+			if manager != nil {
+				manager.Unmount(node)
+			}
+		}
 		cleanupEffect(&scope.slots[index])
 	}
 }
@@ -355,3 +364,26 @@ func useEffect(context BuildContext, kind hookKind, effect Effect, dependencies 
 
 func UseLifecycle(context BuildContext) LifecycleState { return context.Environment.Lifecycle }
 func UseMediaQuery(context BuildContext) MediaQuery    { return context.Environment.MediaQuery }
+
+// UseFocusNode creates a focus identity scoped to the mounted Functional
+// component. It is removed automatically when that component unmounts.
+func UseFocusNode(context BuildContext, key string, options FocusOptions) *FocusNode {
+	registry, scope := hookContext(context)
+	slot := registry.next(scope, hookFocusNode)
+	if !slot.ready {
+		node := NewFocusNode(key, options)
+		slot.value = node
+		slot.ready = true
+		if manager := context.Environment.Focus; manager != nil {
+			manager.Mount(nil, node)
+		}
+	}
+	node, ok := slot.value.(*FocusNode)
+	if !ok {
+		panic("ui: UseFocusNode type changed at " + context.Path)
+	}
+	node.mu.Lock()
+	node.key, node.options = key, options
+	node.mu.Unlock()
+	return node
+}

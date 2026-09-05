@@ -275,6 +275,21 @@ func DefaultTheme() Theme {
 // PlatformStyle is applied after portable style resolution.
 type PlatformStyle struct{ IOS, Android Style }
 
+type Platform uint8
+
+const (
+	PlatformIOS Platform = iota + 1
+	PlatformAndroid
+)
+
+// ResolvePlatformStyle applies the selected platform override after portable style.
+func ResolvePlatformStyle(portable Style, overrides PlatformStyle, platform Platform) Style {
+	if platform == PlatformAndroid {
+		return portable.Merge(overrides.Android)
+	}
+	return portable.Merge(overrides.IOS)
+}
+
 // Breakpoint applies Style when the viewport is at least MinWidth points wide.
 type Breakpoint struct {
 	MinWidth float32

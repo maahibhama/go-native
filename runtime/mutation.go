@@ -28,6 +28,8 @@ type Mutation struct {
 	Props     ui.Props
 	Style     ui.Style
 	Platform  ui.PlatformStyle
+	HasFrame  bool
+	Frame     ui.LayoutRect
 }
 
 // MutationBatch crosses the native boundary as one serialized payload.
@@ -47,3 +49,10 @@ type TimingSample struct {
 
 // Renderer accepts complete batches. Implementations must marshal application to the UI thread.
 type Renderer interface{ Apply(MutationBatch) error }
+
+// LayoutProvider computes deterministic, Go-owned geometry before a mutation
+// batch is committed. Renderers may implement this optional interface when
+// their native host supplies intrinsic measurements.
+type LayoutProvider interface {
+	ComputeLayout(*ui.Node, ui.Environment) ([]ui.LayoutFrame, error)
+}

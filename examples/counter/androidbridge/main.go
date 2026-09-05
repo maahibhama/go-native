@@ -4,11 +4,15 @@ package main
 
 /*
 #include <stdint.h>
+#include <stdlib.h>
 void GNAndroidApplyMutationBatch(const uint8_t *bytes, int32_t length);
+int32_t GNAndroidMeasureBatch(const uint8_t *bytes, int32_t length, uint8_t **result);
+void GNAndroidFreeBuffer(uint8_t *bytes);
 */
 import "C"
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -16,6 +20,7 @@ import (
 
 	"github.com/go-native/go-native/examples/counter"
 	gnruntime "github.com/go-native/go-native/runtime"
+	"github.com/go-native/go-native/runtime/layout"
 	"github.com/go-native/go-native/ui"
 )
 
@@ -35,13 +40,73 @@ func (androidRenderer) Apply(batch gnruntime.MutationBatch) error {
 	return nil
 }
 
+func (androidRenderer) MeasureBatch(ctx context.Context, requests []layout.MeasurementRequest) ([]layout.MeasurementResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	payload, err := layout.MarshalMeasurementRequests(requests)
+	if err != nil {
+		return nil, err
+	}
+	if len(payload) == 0 {
+		return nil, errors.New("android measurement: empty request batch")
+	}
+	var result *C.uint8_t
+	length := C.GNAndroidMeasureBatch((*C.uint8_t)(unsafe.Pointer(&payload[0])), C.int32_t(len(payload)), &result)
+	if length <= 0 || result == nil {
+		return nil, fmt.Errorf("android measurement: native adapter unavailable (%d)", int32(length))
+	}
+	defer C.GNAndroidFreeBuffer(result)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return layout.UnmarshalMeasurementResults(C.GoBytes(unsafe.Pointer(result), C.int(length)))
+}
+
 var appRuntime *gnruntime.Runtime
 
 //export GoNativeAndroidStart
 func GoNativeAndroidStart() {
-	appRuntime = gnruntime.New(counter.App, androidRenderer{})
+	renderer := androidRenderer{}
+	appRuntime = gnruntime.New(counter.App, renderer)
+	appRuntime.SetLayoutProvider(&layout.Pipeline{Measurer: renderer, Cache: layout.NewMeasurementCache()})
 	if err := appRuntime.Start(); err != nil {
 		panic(err)
+	}
+}
+
+//export GoNativeAndroidUpdateViewport
+func GoNativeAndroidUpdateViewport(width, height, scale C.float) {
+	if appRuntime == nil || width <= 0 || height <= 0 || scale <= 0 {
+		return
+	}
+	current := appRuntime.Environment().MediaQuery
+	if current.Viewport.Width == float32(width) && current.Viewport.Height == float32(height) && current.Scale == float32(scale) {
+		return
+	}
+	appRuntime.UpdateEnvironment(func(environment ui.Environment) ui.Environment {
+		environment.MediaQuery.Viewport = ui.Size{Width: float32(width), Height: float32(height)}
+		environment.MediaQuery.Scale = float32(scale)
+		if width > height {
+			environment.MediaQuery.Orientation = ui.OrientationLandscape
+		} else {
+			environment.MediaQuery.Orientation = ui.OrientationPortrait
+		}
+		return environment
+	})
+}
+
+//export GoNativeAndroidSetLifecycle
+func GoNativeAndroidSetLifecycle(state C.uint8_t) {
+	if appRuntime != nil {
+		appRuntime.SetLifecycle(ui.LifecycleState(state))
+	}
+}
+
+//export GoNativeAndroidDispatchFocus
+func GoNativeAndroidDispatchFocus(nodeID C.uint64_t, focused C.uint8_t) {
+	if appRuntime != nil {
+		appRuntime.DispatchFocus(ui.NodeID(nodeID), focused != 0)
 	}
 }
 
