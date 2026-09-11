@@ -408,6 +408,20 @@ func getProjectTemplates(name string) map[string]string {
 
 	templates := map[string]string{
 		"go.mod": fmt.Sprintf("module %s\n\ngo 1.24\n\nrequire github.com/go-native/go-native v0.0.0\n", name),
+		"gonative.yaml": `framework:
+  version: 0.1.0
+  protocol: 10
+  measurementProtocol: 2
+
+ios:
+  deploymentTarget: "15.0"
+  package: GoNativeKit
+
+android:
+  minSdk: 23
+  targetSdk: 35
+  dependency: dev.gonative:gonative-runtime:0.1.0
+`,
 		"app.go": `// Package app contains the application's declarative native UI.
 package app
 
@@ -464,6 +478,20 @@ gonative run android
 @property (strong, nonatomic) UIWindow *window;
 
 @end
+`,
+		"ios/Package.swift": `// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+    name: "GoNativeAppDependencies",
+    platforms: [.iOS(.v15)],
+    products: [
+        .library(name: "GoNativeAppDependencies", targets: ["GoNativeKit"]),
+    ],
+    targets: [
+        .binaryTarget(name: "GoNativeKit", path: ".gonative/GoNativeKit.xcframework"),
+    ]
+)
 `,
 		"ios/AppDelegate.m": `#import "AppDelegate.h"
 #import "GoNativeRenderer.h"
@@ -722,6 +750,7 @@ func main() {}
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        maven { url = uri("${rootDir}/.gonative/m2") }
         google()
         mavenCentral()
     }
@@ -776,7 +805,7 @@ android {
 }
 
 dependencies {
-    implementation files("libs/gonative-runtime.aar")
+    implementation "dev.gonative:gonative-runtime:0.1.0"
 }
 
 tasks.register("prepareGoNativeLibraries", Exec) {

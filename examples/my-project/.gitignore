@@ -5,4 +5,3 @@ build/
 *.apk
 *.idsig
 DerivedData/
-android/app/libs/*.aar

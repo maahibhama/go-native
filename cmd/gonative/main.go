@@ -198,6 +198,11 @@ func runStandalonePlatformCommand(root, action, platform string, runner commandR
 		if err = runner.Run(frameworkScript, nil, frameworkRoot, env, stdout, stderr); err != nil {
 			return fmt.Errorf("build GoNativeKit: %w", err)
 		}
+		frameworkArtifact := filepath.Join(frameworkRoot, "build", "native", "GoNativeKit.xcframework")
+		appFramework := filepath.Join(root, "ios", ".gonative", "GoNativeKit.xcframework")
+		if err = replaceDir(frameworkArtifact, appFramework); err != nil {
+			return fmt.Errorf("install GoNativeKit Swift package artifact: %w", err)
+		}
 		sdkOut, err := exec.Command("xcrun", "--sdk", "iphonesimulator", "--show-sdk-path").Output()
 		if err != nil {
 			return fmt.Errorf("lookup iOS simulator SDK: %w", err)
@@ -265,12 +270,10 @@ func runStandalonePlatformCommand(root, action, platform string, runner commandR
 		if err = runner.Run(frameworkScript, nil, frameworkRoot, env, stdout, stderr); err != nil {
 			return fmt.Errorf("build gonative-runtime AAR: %w", err)
 		}
-		appLibs := filepath.Join(root, "android", "app", "libs")
-		if err = os.MkdirAll(appLibs, 0o755); err != nil {
-			return fmt.Errorf("create Android app libraries: %w", err)
-		}
-		if err = copyFile(filepath.Join(frameworkRoot, "build", "native", "gonative-runtime.aar"), filepath.Join(appLibs, "gonative-runtime.aar")); err != nil {
-			return fmt.Errorf("install gonative-runtime AAR: %w", err)
+		frameworkMaven := filepath.Join(frameworkRoot, "build", "native", "maven")
+		appMaven := filepath.Join(root, "android", ".gonative", "m2")
+		if err = replaceDir(frameworkMaven, appMaven); err != nil {
+			return fmt.Errorf("install gonative-runtime Maven repository: %w", err)
 		}
 		if err := buildStandaloneAndroidLibs(root, env, runner, stdout, stderr); err != nil {
 			return err
@@ -434,6 +437,13 @@ func copyDir(src, dst string) error {
 		}
 		return copyFile(path, target)
 	})
+}
+
+func replaceDir(src, dst string) error {
+	if err := os.RemoveAll(dst); err != nil {
+		return err
+	}
+	return copyDir(src, dst)
 }
 
 func defaultEnv(env []string, key, value string) []string {

@@ -42,7 +42,7 @@ android {
 }
 
 dependencies {
-    implementation files("libs/gonative-runtime.aar")
+    implementation "dev.gonative:gonative-runtime:0.1.0"
 }
 
 tasks.register("prepareGoNativeLibraries", Exec) {

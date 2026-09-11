@@ -1,0 +1,13 @@
+framework:
+  version: 0.1.0
+  protocol: 10
+  measurementProtocol: 2
+
+ios:
+  deploymentTarget: "15.0"
+  package: GoNativeKit
+
+android:
+  minSdk: 23
+  targetSdk: 35
+  dependency: dev.gonative:gonative-runtime:0.1.0

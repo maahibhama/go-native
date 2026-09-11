@@ -174,7 +174,7 @@ Acceptance:
 
 ### Phase 4 — Dependency and module integration
 
-- Add SPM/XCFramework and Maven/AAR dependency resolution.
+- [x] Add local SPM/XCFramework and Maven/AAR dependency resolution.
 - Generate permission, plist, manifest, framework, and Gradle declarations from
   `gonative.yaml`.
 - Introduce typed native-module registration without modifying app launchers.

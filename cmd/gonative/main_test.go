@@ -43,6 +43,7 @@ func TestInitCreatesCompleteNativeScaffold(t *testing.T) {
 
 	expectedFiles := []string{
 		"go.mod",
+		"gonative.yaml",
 		"app.go",
 		"README.md",
 		".gitignore",
@@ -52,6 +53,7 @@ func TestInitCreatesCompleteNativeScaffold(t *testing.T) {
 		"ios/hello-native.xcodeproj/xcshareddata/xcschemes/hello-native.xcscheme",
 		"ios/AppDelegate.h",
 		"ios/AppDelegate.m",
+		"ios/Package.swift",
 		"ios/main.m",
 		"ios/Info.plist",
 		"ios/bridge/main.go",
@@ -134,6 +136,22 @@ func TestInitCreatesCompleteNativeScaffold(t *testing.T) {
 	}
 	if !strings.Contains(string(appDelegateM), "@implementation AppDelegate") || !strings.Contains(string(appDelegateM), "GNRootViewController") {
 		t.Fatalf("unexpected AppDelegate.m:\n%s", appDelegateM)
+	}
+
+	packageSwift, err := os.ReadFile(filepath.Join(destination, "ios", "Package.swift"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(packageSwift), `.binaryTarget(name: "GoNativeKit"`) {
+		t.Fatalf("unexpected Package.swift:\n%s", packageSwift)
+	}
+
+	androidBuild, err := os.ReadFile(filepath.Join(destination, "android", "app", "build.gradle"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(androidBuild), `dev.gonative:gonative-runtime:0.1.0`) {
+		t.Fatalf("Android app does not use Maven runtime dependency:\n%s", androidBuild)
 	}
 
 	mainM, err := os.ReadFile(filepath.Join(destination, "ios", "main.m"))

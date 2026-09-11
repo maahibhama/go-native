@@ -1,4 +1,5 @@
 apply plugin: "com.android.library"
+apply plugin: "maven-publish"
 
 android {
     namespace "dev.gonative.runtime"
@@ -8,10 +9,33 @@ android {
         minSdk 23
         consumerProguardFiles "consumer-rules.pro"
     }
+
+    publishing {
+        singleVariant("debug")
+    }
 }
 
 dependencies {
     implementation "androidx.recyclerview:recyclerview:1.4.0"
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            debug(MavenPublication) {
+                groupId = "dev.gonative"
+                artifactId = "gonative-runtime"
+                version = System.getenv("GONATIVE_VERSION") ?: "0.1.0"
+                from components.debug
+            }
+        }
+        repositories {
+            maven {
+                name = "GoNative"
+                url = uri(System.getenv("GONATIVE_MAVEN_REPO") ?: "${rootProject.projectDir}/../../build/native/maven")
+            }
+        }
+    }
 }
 
 // Annotation extraction is not used by the runtime API and otherwise downloads
