@@ -1,1 +1,0 @@
--keep class dev.gonative.runtime.GoNativeActivity { *; }
