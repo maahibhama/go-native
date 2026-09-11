@@ -132,6 +132,31 @@ func TestInitDispatchWorksOutsideFrameworkRepository(t *testing.T) {
 	if _, err = os.Stat(filepath.Join(parent, "standalone", "ios", "main.m")); err != nil {
 		t.Fatal(err)
 	}
+	module, err := os.ReadFile(filepath.Join(parent, "standalone", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(module), "replace github.com/go-native/go-native =>") {
+		t.Fatalf("standalone project did not retain its local framework dependency:\n%s", module)
+	}
+	if _, err = os.Stat(filepath.Join(parent, "standalone", "android", "gradlew")); err != nil {
+		t.Fatalf("standalone project is missing Gradle wrapper: %v", err)
+	}
+}
+
+func TestFrameworkRootEnvironmentOverride(t *testing.T) {
+	root, err := findProjectRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GONATIVE_FRAMEWORK_ROOT", root)
+	got, err := findFrameworkRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != root {
+		t.Fatalf("root=%q want=%q", got, root)
+	}
 }
 
 func TestInitRejectsUnsafeNames(t *testing.T) {

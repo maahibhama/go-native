@@ -29,6 +29,7 @@ rm -rf "$BUILD"
 mkdir -p "$APP"
 
 cd "$ROOT"
+"$ROOT/scripts/build-ios-framework.sh" >/dev/null
 LDFLAGS=
 if [ "${GONATIVE_BENCHMARK:-0}" = "1" ]; then LDFLAGS='-X main.benchmarkOutput=1'; fi
 CGO_ENABLED=1 GOOS=ios GOARCH=arm64 \
@@ -39,11 +40,9 @@ go build -ldflags "$LDFLAGS" -buildmode=c-archive -o "$BUILD/counter.a" ./exampl
 
 xcrun --sdk iphoneos clang -target arm64-apple-ios15.0 -isysroot "$SDK" \
     -fobjc-arc -framework UIKit -framework Foundation -framework CoreGraphics \
-    -I"$BUILD" -I"$ROOT/platform/ios" \
-    "$ROOT/platform/ios/main.m" "$ROOT/platform/ios/GNProtocolReader.m" \
-    "$ROOT/platform/ios/GNViewRegistry.m" "$ROOT/platform/ios/GNRuntimeHost.m" \
-    "$ROOT/platform/ios/GNMeasurementHost.m" \
-    "$ROOT/platform/ios/GoNativeRenderer.m" \
+    -I"$BUILD" -I"$ROOT/build/native/GoNativeKit.xcframework/ios-arm64/Headers" \
+    "$ROOT/platform/ios/main.m" \
+    "$ROOT/build/native/GoNativeKit.xcframework/ios-arm64/libGoNativeKit.a" \
     "$BUILD/counter.a" -o "$APP/GoNativeCounter"
 cp "$ROOT/platform/ios/Info.plist" "$APP/Info.plist"
 cp "$PROFILE" "$APP/embedded.mobileprovision"

@@ -15,7 +15,8 @@ Branch: `feat/v1/app_code_clean`
 - [ ] Split iOS control creation and styling.
 - [x] Extract Android bounded protocol reading into an app-neutral runtime package.
 - [ ] Split Android registry, controls, measurement, and runtime host.
-- [ ] Build and consume XCFramework/AAR artifacts.
+- [x] Build a reproducible `GoNativeKit.xcframework` with device and simulator slices.
+- [ ] Build and consume the Android AAR artifact.
 - [ ] Reduce generated projects and regenerate `examples/my-project`.
 
 ## Outcome

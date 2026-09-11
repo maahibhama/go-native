@@ -29,6 +29,7 @@ Environment:
   GONATIVE_IOS_PROVISIONING_PROFILE   Path to a .mobileprovision file
   GONATIVE_ANDROID_ABIS               Comma-separated Android ABIs
   GONATIVE_ANDROID_SERIAL             adb device serial
+  GONATIVE_FRAMEWORK_ROOT             Local Go Native checkout (development builds)
   ANDROID_SDK_ROOT                    Android SDK location
 `
 
@@ -419,14 +420,21 @@ func defaultEnv(env []string, key, value string) []string {
 }
 
 func findFrameworkRoot() (string, error) {
+	if configured := os.Getenv("GONATIVE_FRAMEWORK_ROOT"); configured != "" {
+		return validateFrameworkRoot(configured)
+	}
+	if _, sourceFile, _, ok := runtime.Caller(0); ok {
+		if root, err := validateFrameworkRoot(filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "..", ".."))); err == nil {
+			return root, nil
+		}
+	}
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 	for {
-		module, readErr := os.ReadFile(filepath.Join(dir, "go.mod"))
-		if readErr == nil && strings.Contains(string(module), "module github.com/go-native/go-native") {
-			return dir, nil
+		if root, validateErr := validateFrameworkRoot(dir); validateErr == nil {
+			return root, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -434,6 +442,18 @@ func findFrameworkRoot() (string, error) {
 		}
 		dir = parent
 	}
+}
+
+func validateFrameworkRoot(root string) (string, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	module, err := os.ReadFile(filepath.Join(abs, "go.mod"))
+	if err != nil || !strings.Contains(string(module), "module github.com/go-native/go-native") {
+		return "", fmt.Errorf("%s is not a Go Native framework root", abs)
+	}
+	return abs, nil
 }
 
 func findProjectRoot() (string, error) {

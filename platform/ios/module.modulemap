@@ -1,0 +1,5 @@
+framework module GoNativeKit {
+    umbrella header "GoNativeKit.h"
+    export *
+    module * { export * }
+}
