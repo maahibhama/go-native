@@ -41,6 +41,7 @@ xcrun --sdk iphoneos clang -target arm64-apple-ios15.0 -isysroot "$SDK" \
     -fobjc-arc -framework UIKit -framework Foundation -framework CoreGraphics \
     -I"$BUILD" -I"$ROOT/platform/ios" \
     "$ROOT/platform/ios/main.m" "$ROOT/platform/ios/GNProtocolReader.m" \
+    "$ROOT/platform/ios/GNViewRegistry.m" "$ROOT/platform/ios/GNRuntimeHost.m" \
     "$ROOT/platform/ios/GoNativeRenderer.m" \
     "$BUILD/counter.a" -o "$APP/GoNativeCounter"
 cp "$ROOT/platform/ios/Info.plist" "$APP/Info.plist"

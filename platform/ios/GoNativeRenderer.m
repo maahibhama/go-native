@@ -1,5 +1,6 @@
 #import "GoNativeRenderer.h"
 #import "GNProtocolReader.h"
+#import "GNViewRegistry.h"
 #import "../abi/GoNativeApp.h"
 #include <time.h>
 #include <math.h>
@@ -69,13 +70,6 @@ typedef NS_ENUM(uint8_t, GNNode) { GNView=1, GNText, GNButton, GNRow, GNColumn, 
     GoNativeDispatchGestureEvent(self.handler,(float)translation.x,(float)translation.y,(float)velocity.x,(float)velocity.y);
 }
 @end
-
-static NSMutableDictionary<NSNumber *,UIView *> *GNViews;
-static NSMutableDictionary<NSNumber *,GNAction *> *GNActions;
-static NSMutableDictionary<NSNumber *,NSArray<GNGestureAction *> *> *GNGestureActions;
-static NSMutableDictionary<NSNumber *,NSValue *> *GNComputedFrames;
-static NSMutableDictionary<NSNumber *,NSArray<NSLayoutConstraint *> *> *GNFrameConstraints;
-static __weak GNRootViewController *GNRoot;
 
 static uint64_t GNNowNanos(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC_RAW,&t);return (uint64_t)t.tv_sec*1000000000ull+(uint64_t)t.tv_nsec;}
 
@@ -283,14 +277,3 @@ int32_t GNMeasureNativeBatch(const uint8_t *bytes,int32_t length,uint8_t **resul
     };if(NSThread.isMainThread)measure();else dispatch_sync(dispatch_get_main_queue(),measure);if(status!=0||!output)return status?:6;void *buffer=malloc(output.length);if(!buffer)return 7;memcpy(buffer,output.bytes,output.length);*results=buffer;*resultLength=(int32_t)output.length;return 0;
 }
 void GNFreeNativeBuffer(void *buffer){free(buffer);}
-
-@implementation GNRootViewController
-- (void)viewDidLoad {[super viewDidLoad];self.view.backgroundColor=UIColor.systemBackgroundColor;GNRoot=self;GNViews=[NSMutableDictionary dictionary];GNActions=[NSMutableDictionary dictionary];GNGestureActions=[NSMutableDictionary dictionary];GNComputedFrames=[NSMutableDictionary dictionary];GNFrameConstraints=[NSMutableDictionary dictionary];GoNativeStart();GoNativeSetLifecycle(1);[[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(gnDidBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];[[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(gnWillResignActive) name:UIApplicationWillResignActiveNotification object:nil];[[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(gnDidEnterBackground) name:UIApplicationDidEnterBackgroundNotification object:nil];[[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(gnWillEnterForeground) name:UIApplicationWillEnterForegroundNotification object:nil];[[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(gnMemoryWarning) name:UIApplicationDidReceiveMemoryWarningNotification object:nil];}
-- (void)gnDidBecomeActive { GoNativeSetLifecycle(2); }
-- (void)gnWillResignActive { GoNativeSetLifecycle(3); }
-- (void)gnDidEnterBackground { GoNativeSetLifecycle(4); }
-- (void)gnWillEnterForeground { GoNativeSetLifecycle(1); }
-- (void)gnMemoryWarning { GoNativeSetLifecycle(5); }
-- (void)viewDidLayoutSubviews {[super viewDidLayoutSubviews];CGRect viewport=self.view.safeAreaLayoutGuide.layoutFrame;GoNativeSetViewport((float)viewport.size.width,(float)viewport.size.height,(float)UIScreen.mainScreen.scale);}
-- (void)dealloc { [[NSNotificationCenter defaultCenter]removeObserver:self];GoNativeSetLifecycle(6);GoNativeStop(); }
-@end
