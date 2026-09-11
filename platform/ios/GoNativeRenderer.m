@@ -1,9 +1,7 @@
 #import "GoNativeRenderer.h"
-#import "counter.h"
+#import "../abi/GoNativeApp.h"
 #include <time.h>
 #include <math.h>
-
-extern void GoNativeDispatchSelection(uint64_t handler,int32_t start,int32_t end);
 
 typedef NS_ENUM(uint8_t, GNMutation) { GNCreate=1, GNDelete, GNUpdate, GNInsert, GNRemove, GNMove };
 typedef NS_ENUM(uint8_t, GNNode) { GNView=1, GNText, GNButton, GNRow, GNColumn, GNSafeArea, GNTextInput, GNSwitch, GNProgressIndicator, GNImage, GNScrollView };

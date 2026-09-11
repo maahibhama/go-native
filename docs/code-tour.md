@@ -60,6 +60,10 @@ The render transaction is:
 
 Native hosts create controls, apply properties and geometry, deliver events, and clean up native objects. They do not own application state. All mutations execute on the platform UI thread, and native registries store only `NodeID` and `HandlerID` integers.
 
+The migration to packaged native dependencies is tracked in
+[`plans/app-code-clean.md`](plans/app-code-clean.md). New platform boundaries should
+move toward that design instead of adding more renderer source to application templates.
+
 ### 4. Tooling and applications
 
 - `cmd/gonative/` — CLI and generated project templates.
