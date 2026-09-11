@@ -3,6 +3,18 @@
 Status: in progress  
 Branch: `feat/v1/app_code_clean`
 
+## Implementation progress
+
+- [x] Define the native framework packaging decision.
+- [x] Add the app-neutral iOS ABI header and remove the framework renderer's
+  dependency on an app-generated header.
+- [x] Extract bounded little-endian reading into `GNProtocolReader` and compile it
+  through framework simulator/device build paths.
+- [ ] Split iOS registry, control styling, measurement, and runtime host.
+- [ ] Split Android decoder, registry, controls, measurement, and runtime host.
+- [ ] Build and consume XCFramework/AAR artifacts.
+- [ ] Reduce generated projects and regenerate `examples/my-project`.
+
 ## Outcome
 
 A generated Go Native application contains application code, assets, configuration,

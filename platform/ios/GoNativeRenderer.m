@@ -1,4 +1,5 @@
 #import "GoNativeRenderer.h"
+#import "GNProtocolReader.h"
 #import "../abi/GoNativeApp.h"
 #include <time.h>
 #include <math.h>
@@ -76,14 +77,6 @@ static NSMutableDictionary<NSNumber *,NSValue *> *GNComputedFrames;
 static NSMutableDictionary<NSNumber *,NSArray<NSLayoutConstraint *> *> *GNFrameConstraints;
 static __weak GNRootViewController *GNRoot;
 
-typedef struct { const uint8_t *p; const uint8_t *end; } GNReader;
-static uint8_t u8(GNReader *r){return r->p<r->end?*r->p++:0;}
-static uint16_t u16(GNReader*r){uint16_t v=0;if(r->p+2<=r->end){memcpy(&v,r->p,2);r->p+=2;}return v;}
-static uint32_t u32(GNReader*r){uint32_t v=0;if(r->p+4<=r->end){memcpy(&v,r->p,4);r->p+=4;}return v;}
-static uint64_t u64(GNReader*r){uint64_t v=0;if(r->p+8<=r->end){memcpy(&v,r->p,8);r->p+=8;}return v;}
-static int32_t i32(GNReader*r){return (int32_t)u32(r);}
-static float f32(GNReader*r){float v=0;if(r->p+4<=r->end){memcpy(&v,r->p,4);r->p+=4;}return v;}
-static NSString *str(GNReader*r){uint32_t n=u32(r);if(r->p+n>r->end){r->p=r->end;return @"";}NSString*s=[[NSString alloc]initWithBytes:r->p length:n encoding:NSUTF8StringEncoding]?:@"";r->p+=n;return s;}
 static uint64_t GNNowNanos(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC_RAW,&t);return (uint64_t)t.tv_sec*1000000000ull+(uint64_t)t.tv_nsec;}
 
 static UIViewAnimationOptions GNAnimationOptions(uint8_t curve) {
@@ -248,8 +241,6 @@ static void GNApplyComputedFrame(uint64_t nodeID,UIView *view) {
 }
 
 typedef struct { uint8_t wrap,overflow,inputMode,inputKind,returnKey,capitalization,autocorrect,validation;uint32_t maxLines;BOOL selectable,secure,multiline,readOnly;NSData *rich;uint64_t linkHandler,submitHandler,selectionHandler;NSString *placeholder,*errorText;int32_t selectionStart,selectionEnd,maxLength; } GNTextContract;
-static BOOL GNReadBoundedData(GNReader *reader,NSData **value){if(reader->p+4>reader->end)return NO;uint32_t length=u32(reader);if(length>1048576||(NSUInteger)(reader->end-reader->p)<length)return NO;*value=[NSData dataWithBytes:reader->p length:length];reader->p+=length;return YES;}
-static BOOL GNReadBoundedString(GNReader *reader,NSString **value){NSData *data=nil;if(!GNReadBoundedData(reader,&data))return NO;*value=[[NSString alloc]initWithData:data encoding:NSUTF8StringEncoding]?:@"";return YES;}
 static BOOL GNReadTextContract(GNReader *r,GNTextContract *v){
     if((NSUInteger)(r->end-r->p)<7)return NO;v->wrap=u8(r);v->overflow=u8(r);v->maxLines=u32(r);v->selectable=u8(r);NSData *rich=nil;if(!GNReadBoundedData(r,&rich)||(NSUInteger)(r->end-r->p)<8)return NO;v->rich=rich;v->linkHandler=u64(r);NSString *placeholder=nil;if(!GNReadBoundedString(r,&placeholder)||(NSUInteger)(r->end-r->p)<9)return NO;v->placeholder=placeholder;v->inputMode=u8(r);v->inputKind=u8(r);v->returnKey=u8(r);v->capitalization=u8(r);v->autocorrect=u8(r);v->secure=u8(r);v->multiline=u8(r);v->readOnly=u8(r);v->validation=u8(r);NSString *errorText=nil;if(!GNReadBoundedString(r,&errorText)||(NSUInteger)(r->end-r->p)<28)return NO;v->errorText=errorText;v->selectionStart=i32(r);v->selectionEnd=i32(r);v->maxLength=i32(r);v->submitHandler=u64(r);v->selectionHandler=u64(r);return YES;
 }
@@ -270,7 +261,6 @@ static void GNAppendU16(NSMutableData *data,uint16_t value){[data appendBytes:&v
 static void GNAppendU32(NSMutableData *data,uint32_t value){[data appendBytes:&value length:sizeof(value)];}
 static void GNAppendU64(NSMutableData *data,uint64_t value){[data appendBytes:&value length:sizeof(value)];}
 static void GNAppendF32(NSMutableData *data,float value){[data appendBytes:&value length:sizeof(value)];}
-static BOOL GNReadStringChecked(GNReader *reader,NSString **value){if(reader->p+4>reader->end)return NO;uint32_t length=u32(reader);if(length>1048576||reader->p+length>reader->end)return NO;*value=[[NSString alloc]initWithBytes:reader->p length:length encoding:NSUTF8StringEncoding]?:@"";reader->p+=length;return YES;}
 static UIFont *GNMeasurementFont(NSData *typedStyle,CGFloat fallback){
     const uint8_t *record=typedStyle.bytes,*end=record+typedStyle.length;if(typedStyle.length<2)return [UIFont systemFontOfSize:fallback];uint16_t version=0;memcpy(&version,record,2);if(version!=1)return [UIFont systemFontOfSize:fallback];
     const uint8_t *style=record+2;NSUInteger styleSize=GNStyleSize(style,end);if(!styleSize)return [UIFont systemFontOfSize:fallback];uint32_t familyLength=0;memcpy(&familyLength,style+181,4);NSUInteger fontOffset=185+(NSUInteger)familyLength;if(style+fontOffset+6>end)return [UIFont systemFontOfSize:fallback];
