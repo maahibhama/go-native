@@ -111,6 +111,13 @@ func GoNativeDispatchValueEvent(handler C.uint64_t, value *C.char) {
 	}
 }
 
+//export GoNativeDispatchSelection
+func GoNativeDispatchSelection(handler C.uint64_t, start, end C.int32_t) {
+	if appRuntime != nil {
+		appRuntime.DispatchSelection(ui.HandlerID(handler), int32(start), int32(end))
+	}
+}
+
 //export GoNativeDispatchBoolEvent
 func GoNativeDispatchBoolEvent(handler C.uint64_t, value C.uint8_t) {
 	if appRuntime != nil {

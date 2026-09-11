@@ -10,6 +10,7 @@ extern void GoNativeAndroidDispatchEvent(uint64_t handler);
 extern void GoNativeAndroidDispatchValueEvent(uint64_t handler, const char *value);
 extern void GoNativeAndroidDispatchBoolEvent(uint64_t handler, uint8_t value);
 extern void GoNativeAndroidDispatchGestureEvent(uint64_t handler, float translationX, float translationY, float velocityX, float velocityY);
+extern void GoNativeAndroidDispatchSelectionEvent(uint64_t handler, int32_t start, int32_t end);
 extern void GoNativeAndroidStop(void);
 extern void GoNativeAndroidReportBatchApplied(uint64_t sequence, uint64_t nativeNanos);
 extern void GoNativeAndroidSetLifecycle(uint8_t state);
@@ -88,6 +89,13 @@ Java_dev_gonative_counter_MainActivity_nativeDispatchGestureEvent(JNIEnv *env, j
     (void)env;
     (void)renderer;
     GoNativeAndroidDispatchGestureEvent((uint64_t)handler, (float)translationX, (float)translationY, (float)velocityX, (float)velocityY);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_gonative_counter_MainActivity_nativeDispatchSelectionEvent(JNIEnv *env, jobject renderer, jlong handler, jint start, jint end) {
+    (void)env;
+    (void)renderer;
+    GoNativeAndroidDispatchSelectionEvent((uint64_t)handler, (int32_t)start, (int32_t)end);
 }
 
 JNIEXPORT void JNICALL

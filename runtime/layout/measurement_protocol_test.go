@@ -10,7 +10,7 @@ import (
 )
 
 func TestMeasurementRequestProtocolRoundTrip(t *testing.T) {
-	in := []MeasurementRequest{{ID: 7, NodeType: ui.NodeText, Text: "Hello", Style: ui.Style{Text: ui.TextStyle{FontFamily: "Inter", FontSize: 17, FontWeight: 600}}, Constraints: Constraints{MinWidth: 10, MaxWidth: 200, MaxHeight: 80}}}
+	in := []MeasurementRequest{{ID: 7, NodeType: ui.NodeText, Text: "Hello", TextProps: TextMeasurementProps{Wrap: ui.TextWrap, Overflow: ui.TextOverflowEllipsisTail, MaxLines: 2, Selectable: true, RichText: "spans", Placeholder: "Search", InputKind: ui.InputSearch, Secure: true, Multiline: true, MaxLength: 80}, Style: ui.Style{Text: ui.TextStyle{FontFamily: "Inter", FontSize: 17, FontWeight: 600}}, Constraints: Constraints{MinWidth: 10, MaxWidth: 200, MaxHeight: 80}}}
 	data, err := MarshalMeasurementRequests(in)
 	if err != nil {
 		t.Fatal(err)
@@ -23,7 +23,7 @@ func TestMeasurementRequestProtocolRoundTrip(t *testing.T) {
 		t.Fatalf("requests mismatch: %#v", out)
 	}
 	hash := sha256.Sum256(data)
-	if got := hex.EncodeToString(hash[:]); got != "fe0d0d0d69fc9c63260bdd443d0447de0d6ec6d9082491cb71f0c10c94a163d8" {
+	if got := hex.EncodeToString(hash[:]); got != "3007dbc336adbc1b94614e97fe76df05f0ffc4cfb453df80e953233e61f353fd" {
 		t.Fatalf("measurement request golden hash = %s", got)
 	}
 }

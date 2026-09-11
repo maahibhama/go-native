@@ -10,6 +10,8 @@ const (
 	CapabilityFocus
 	CapabilityLifecycle
 	CapabilityComputedGeometry
+	CapabilityRichText
+	CapabilityAdvancedInput
 )
 
 type ProtocolCapabilities struct {
@@ -19,7 +21,7 @@ type ProtocolCapabilities struct {
 }
 
 func CurrentProtocolCapabilities() ProtocolCapabilities {
-	return ProtocolCapabilities{MinimumVersion: protocolVersion, MaximumVersion: protocolVersion, Features: CapabilityTypedStyle | CapabilityNativeMeasurement | CapabilityFocus | CapabilityLifecycle | CapabilityComputedGeometry}
+	return ProtocolCapabilities{MinimumVersion: protocolVersion, MaximumVersion: protocolVersion, Features: CapabilityTypedStyle | CapabilityNativeMeasurement | CapabilityFocus | CapabilityLifecycle | CapabilityComputedGeometry | CapabilityRichText | CapabilityAdvancedInput}
 }
 
 func NegotiateProtocol(local, remote ProtocolCapabilities) (ProtocolCapabilities, error) {

@@ -269,7 +269,11 @@ func StyleToken(name string, fallback Style) Token[Style] {
 }
 
 func DefaultTheme() Theme {
-	return Theme{Name: "default", Colors: map[string]Color{"background": RGB(255, 255, 255), "foreground": RGB(17, 17, 17), "primary": RGB(0, 122, 255)}, Typography: map[string]TextStyle{"body": {FontSize: 16, FontWeight: 400}, "title": {FontSize: 28, FontWeight: 700}}, Spacing: map[string]float32{"xs": 4, "sm": 8, "md": 16, "lg": 24, "xl": 32}, Radii: map[string]float32{"sm": 4, "md": 8, "lg": 16}, Elevations: map[string]Shadow{}, Motion: map[string]time.Duration{"fast": 150 * time.Millisecond, "normal": 250 * time.Millisecond}, IconSizes: map[string]float32{"sm": 16, "md": 24, "lg": 32}, ControlSizes: map[string]Size{"minimumTouch": {Width: 44, Height: 44}}, ComponentVariants: map[string]Style{}}
+	return Theme{Name: "default", Colors: map[string]Color{"background": RGB(255, 255, 255), "foreground": RGB(17, 17, 17), "primary": RGB(0, 122, 255), "surface": RGB(245, 245, 247), "border": RGB(220, 220, 225)}, Typography: map[string]TextStyle{"body": {FontSize: 16, FontWeight: 400}, "title": {FontSize: 28, FontWeight: 700}}, Spacing: map[string]float32{"xs": 4, "sm": 8, "md": 16, "lg": 24, "xl": 32}, Radii: map[string]float32{"sm": 4, "md": 8, "lg": 16}, Elevations: map[string]Shadow{}, Motion: map[string]time.Duration{"fast": 150 * time.Millisecond, "normal": 250 * time.Millisecond}, IconSizes: map[string]float32{"sm": 16, "md": 24, "lg": 32}, ControlSizes: map[string]Size{"minimumTouch": {Width: 44, Height: 44}}, ComponentVariants: map[string]Style{}}
+}
+
+func DarkTheme() Theme {
+	return Theme{Name: "dark", Colors: map[string]Color{"background": RGB(18, 18, 18), "foreground": RGB(240, 240, 240), "primary": RGB(10, 132, 255), "surface": RGB(30, 30, 30), "border": RGB(50, 50, 50)}, Typography: map[string]TextStyle{"body": {FontSize: 16, FontWeight: 400}, "title": {FontSize: 28, FontWeight: 700}}, Spacing: map[string]float32{"xs": 4, "sm": 8, "md": 16, "lg": 24, "xl": 32}, Radii: map[string]float32{"sm": 4, "md": 8, "lg": 16}, Elevations: map[string]Shadow{}, Motion: map[string]time.Duration{"fast": 150 * time.Millisecond, "normal": 250 * time.Millisecond}, IconSizes: map[string]float32{"sm": 16, "md": 24, "lg": 32}, ControlSizes: map[string]Size{"minimumTouch": {Width: 44, Height: 44}}, ComponentVariants: map[string]Style{}}
 }
 
 // PlatformStyle is applied after portable style resolution.

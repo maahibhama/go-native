@@ -9,8 +9,9 @@ Work from the repository's live source and tests. Read the root `AGENTS.md` firs
 
 ## Route the task
 
-- For UI primitives or props, read `ui/node.go`, `ui/components.go`, and the relevant UI tests.
+- For UI primitives, layout composition, or inputs, read `ui/node.go`, `ui/components.go`, `ui/layout_components.go`, `ui/text_input.go`, and the relevant UI tests.
 - For reconciliation, identity, scheduling, events, or diagnostics, read the owning files in `runtime/` and their tests.
+- For constraint layout, flexbox/grid layout, and intrinsic measurement, read `runtime/layout/` and its tests.
 - For any wire-visible change, read [references/protocol-checklist.md](references/protocol-checklist.md) before editing.
 - For iOS/Android rendering, inspect both native implementations even if only one platform is requested, because they decode the same protocol.
 - For CLI initialization or standalone builds, inspect `cmd/gonative/main.go`, `cmd/gonative/templates.go`, CLI tests, and the checked-in `examples/my-project/` fixture.

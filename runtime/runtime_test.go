@@ -237,6 +237,60 @@ func TestTextInputValueHandlerRetainsIdentity(t *testing.T) {
 	}
 }
 
+func TestTextInputExtendedHandlersRetainIdentityAndFormatValues(t *testing.T) {
+	r := New(nil, &recordingRenderer{})
+	var changed string
+	var submitted int
+	var selection ui.TextSelection
+	build := func(suffix string) *ui.Node {
+		return ui.TextInput("old", func(value string) { changed = value + suffix }).
+			FormatWith(ui.InputFormatterFunc(func(_, proposed string) string { return "[" + proposed + "]" })).
+			ReturnAction(ui.ReturnKeyDone, func() { submitted++ }).
+			SelectionRange(ui.UncontrolledTextSelection(), func(value ui.TextSelection) { selection = value }).Build()
+	}
+	oldTree := build("-old")
+	r.bindHandlers(nil, oldTree)
+	changeID, submitID, selectionID := oldTree.Props.OnChange, oldTree.Props.OnSubmit, oldTree.Props.OnSelection
+	nextTree := build("-new")
+	r.bindHandlers(oldTree, nextTree)
+	if nextTree.Props.OnChange != changeID || nextTree.Props.OnSubmit != submitID || nextTree.Props.OnSelection != selectionID {
+		t.Fatalf("handler identity changed: %#v -> %#v", oldTree.Props, nextTree.Props)
+	}
+	if !r.DispatchValue(changeID, "edit") || changed != "[edit]-new" {
+		t.Fatalf("formatted change = %q", changed)
+	}
+	if !r.Dispatch(submitID) || submitted != 1 {
+		t.Fatalf("submit count = %d", submitted)
+	}
+	if !r.DispatchSelection(selectionID, 2, 4) || selection != (ui.TextSelection{Start: 2, End: 4}) {
+		t.Fatalf("selection = %#v", selection)
+	}
+	if r.DispatchSelection(selectionID, 4, 2) {
+		t.Fatal("invalid selection dispatched")
+	}
+	r.releaseRemovedHandlers(nextTree, nil)
+	if r.DispatchValue(changeID, "late") || r.Dispatch(submitID) || r.DispatchSelection(selectionID, 0, 0) {
+		t.Fatal("released input handler remained registered")
+	}
+}
+
+func TestRichTextLinkHandlerRetainsIdentityAndCleansUp(t *testing.T) {
+	r := New(nil, &recordingRenderer{})
+	var href string
+	oldTree := ui.RichText([]ui.Span{ui.LinkSpan("Docs", "docs://old")}, func(value string) { href = "old:" + value }).Build()
+	r.bindHandlers(nil, oldTree)
+	id := oldTree.Props.OnLink
+	nextTree := ui.RichText([]ui.Span{ui.LinkSpan("Docs", "docs://new")}, func(value string) { href = "new:" + value }).Build()
+	r.bindHandlers(oldTree, nextTree)
+	if id == 0 || nextTree.Props.OnLink != id || !r.DispatchValue(id, "docs://new") || href != "new:docs://new" {
+		t.Fatalf("link handler id=%d next=%d href=%q", id, nextTree.Props.OnLink, href)
+	}
+	r.releaseRemovedHandlers(nextTree, nil)
+	if r.DispatchValue(id, "late") {
+		t.Fatal("released link handler remained registered")
+	}
+}
+
 func TestSwitchHandlerRetainsIdentity(t *testing.T) {
 	r := New(func() ui.Component { return nil }, &recordingRenderer{})
 	got := false

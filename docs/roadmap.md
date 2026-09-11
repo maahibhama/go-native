@@ -24,6 +24,21 @@ An item is complete only when it has tests, relevant documentation, successful i
   - [x] UIKit/JNI measurement adapters and computed geometry transmission
 - [x] Focus tree and lifecycle callbacks wired from both native hosts
 
+## Component system (v0.3 complete)
+
+- [x] Layout composition API: `View`, `Row`, `Column`, `Stack`, `Spacer`, `Center`, `AspectRatio`, `SafeArea`, `KeyboardAvoidingView`, `ScrollView`, and `Divider`
+- [x] Fluent min/max constraints, margins, non-uniform padding, absolute positioning, overflow, border, shadow, transform, visibility, typography, and hit-slop modifiers
+- [x] Text and rich-span system: selectable text, links, truncation, wrapping, line limits, dynamic type, and custom fonts
+  - [x] Portable typed props, rich-span codec, link callbacks, reconciliation, and protocol round trip
+- [x] Complete input system: secure, multiline, search, numeric, keyboard/return configuration, validation, formatters, selection, and focus traversal
+  - [x] Portable controlled/uncontrolled API, formatters, selection/submit handlers, stable identity, and cleanup
+- [x] Pressable, buttons, links, hit slop, interaction states, and native feedback
+- [x] Selection controls, pickers, date/time controls, and progress variants
+- [x] Media, icons, SVG/vector views, caching, video, and audio controls
+- [x] Feedback overlays, menus, dialogs, sheets, and modals
+- [x] Structural components: bars, scaffold, form, card, badge, avatar, skeleton, and empty/error states
+- [x] Accessibility, dark mode, RTL, responsive, native contract, screenshot, and end-to-end qualification matrix
+
 ## Foundation
 
 - [x] Typed virtual tree for View, Column, Row, Text, and Button

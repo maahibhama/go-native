@@ -31,29 +31,43 @@ func renderLoginScreen() ui.Component {
 	return ui.Functional("login-form", func(ctx ui.BuildContext) ui.Component {
 		usernameFocus := ui.UseFocusNode(ctx, "username", ui.DefaultFocusOptions())
 		passwordFocus := ui.UseFocusNode(ctx, "password", ui.DefaultFocusOptions())
-		return renderLoginForm(usernameFocus, passwordFocus)
+		return ui.KeyboardAvoidingView(renderLoginForm(usernameFocus, passwordFocus))
 	})
 }
 
 func renderLoginForm(usernameFocus, passwordFocus *ui.FocusNode) ui.Component {
+	validation := ui.ValidationNone
+	if statusMessage.Get() != "" {
+		validation = ui.ValidationInvalid
+	}
 	return ui.SafeArea(
 		ui.Column(
 			// Brand Header Image & Titles
 			ui.Image("app_logo").Width(64).Height(64).ResizeMode(ui.ImageFit),
 			ui.Text("Welcome Back").FontSize(28).Bold(),
-			ui.Text("Sign in to continue to Go Native").FontSize(15),
+			ui.Text("Sign in to continue to Go Native").FontSize(15).LineLimit(2).TextOverflow(ui.TextOverflowEllipsisTail),
+			ui.RichText([]ui.Span{ui.PlainSpan("Native controls. "), ui.LinkSpan("Learn more", "gonative://design-system")}, func(string) {
+				statusMessage.Set("Go Native uses genuine platform controls.")
+			}).Selectable(true).FontSize(12),
 
 			// Username Input
 			ui.Text("Username / Email").FontSize(14).Bold(),
 			ui.TextInput(username.Get(), func(val string) {
 				username.Set(val)
-			}).WithFocusNode(usernameFocus).AccessibilityHint("Enter your username or email").Width(280),
+			}).WithFocusNode(usernameFocus).
+				Placeholder("Enter your username or email").InputType(ui.InputEmail).
+				Capitalization(ui.CapitalizeNone).AutoCorrect(ui.AutoCorrectDisabled).
+				ReturnAction(ui.ReturnKeyNext, func() { passwordFocus.RequestFocus() }).
+				Validation(validation, statusMessage.Get()).AccessibilityHint("Enter your username or email").Width(280),
 
 			// Password Input
 			ui.Text("Password").FontSize(14).Bold(),
 			ui.TextInput(password.Get(), func(val string) {
 				password.Set(val)
-			}).WithFocusNode(passwordFocus).AccessibilityHint("Enter your password").Width(280),
+			}).WithFocusNode(passwordFocus).
+				Placeholder("Enter your password").SecureEntry(true).
+				ReturnAction(ui.ReturnKeyDone, submitLogin).MaximumLength(128).
+				Validation(validation, statusMessage.Get()).AccessibilityHint("Enter your password").Width(280),
 
 			// Remember Me Switch
 			ui.Row(
@@ -69,19 +83,7 @@ func renderLoginForm(usernameFocus, passwordFocus *ui.FocusNode) ui.Component {
 			}).FontSize(14).Bold(),
 
 			// Primary Action Button
-			ui.Button("Sign In", func() {
-				user := strings.TrimSpace(username.Get())
-				pass := strings.TrimSpace(password.Get())
-
-				if user == "" || pass == "" {
-					statusMessage.Set("Please enter both username and password.")
-					return
-				}
-
-				statusMessage.Set("")
-				loginCount.Update(func(v int) int { return v + 1 })
-				isLoggedIn.Set(true)
-			}).Width(280).Height(46).FontSize(16).Bold().AccessibilityLabel("Sign In Button"),
+			ui.Button("Sign In", submitLogin).Width(280).Height(46).FontSize(16).Bold().AccessibilityLabel("Sign In Button"),
 
 			// Demo Helper Button
 			ui.Button("Fill Demo Credentials", func() {
@@ -93,6 +95,18 @@ func renderLoginForm(usernameFocus, passwordFocus *ui.FocusNode) ui.Component {
 	).Align(ui.AlignCenter)
 }
 
+func submitLogin() {
+	user := strings.TrimSpace(username.Get())
+	pass := strings.TrimSpace(password.Get())
+	if user == "" || pass == "" {
+		statusMessage.Set("Please enter both username and password.")
+		return
+	}
+	statusMessage.Set("")
+	loginCount.Update(func(v int) int { return v + 1 })
+	isLoggedIn.Set(true)
+}
+
 // renderDashboardScreen builds the authenticated User Dashboard View.
 func renderDashboardScreen() ui.Component {
 	return ui.SafeArea(
@@ -101,7 +115,7 @@ func renderDashboardScreen() ui.Component {
 			ui.TextFunc(func() string {
 				return fmt.Sprintf("Hello, %s!", username.Get())
 			}).FontSize(26).Bold(),
-			ui.Text("You are successfully signed in with native UI controls.").FontSize(15),
+			ui.Text("You are successfully signed in with native UI controls.").FontSize(15).Selectable(true).LineLimit(2),
 
 			ui.Column(
 				ui.TextFunc(func() string {
@@ -110,6 +124,7 @@ func renderDashboardScreen() ui.Component {
 				ui.Text("Platform Controls: Pure UIKit / Android Views").FontSize(14),
 				ui.ProgressIndicator(1.0).Width(240),
 			).Padding(16).Gap(8).Align(ui.AlignCenter),
+			ui.Divider(ui.RGB(207, 218, 238)).Width(240),
 
 			layoutSystemExample(),
 

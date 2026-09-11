@@ -9,7 +9,7 @@ import (
 	"io"
 )
 
-const protocolVersion uint16 = 9
+const protocolVersion uint16 = 10
 
 const (
 	MaxProtocolPayload   = 16 << 20
@@ -99,6 +99,34 @@ func (b MutationBatch) MarshalBinary() ([]byte, error) {
 			return nil, &ProtocolError{Kind: "limit", Detail: "interaction payload exceeds maximum length"}
 		}
 		out.WriteString(m.Props.Interactions)
+		out.WriteByte(byte(m.Props.TextWrap))
+		out.WriteByte(byte(m.Props.TextOverflow))
+		_ = binary.Write(&out, binary.LittleEndian, m.Props.MaxLines)
+		writeBool(&out, m.Props.Selectable)
+		if err := writeBoundedString(&out, m.Props.RichText, "rich text"); err != nil {
+			return nil, err
+		}
+		_ = binary.Write(&out, binary.LittleEndian, uint64(m.Props.OnLink))
+		if err := writeBoundedString(&out, m.Props.Placeholder, "placeholder"); err != nil {
+			return nil, err
+		}
+		out.WriteByte(byte(m.Props.InputMode))
+		out.WriteByte(byte(m.Props.InputKind))
+		out.WriteByte(byte(m.Props.ReturnKey))
+		out.WriteByte(byte(m.Props.Capitalization))
+		out.WriteByte(byte(m.Props.AutoCorrect))
+		writeBool(&out, m.Props.Secure)
+		writeBool(&out, m.Props.Multiline)
+		writeBool(&out, m.Props.ReadOnly)
+		out.WriteByte(byte(m.Props.Validation))
+		if err := writeBoundedString(&out, m.Props.ErrorText, "input error"); err != nil {
+			return nil, err
+		}
+		_ = binary.Write(&out, binary.LittleEndian, m.Props.SelectionStart)
+		_ = binary.Write(&out, binary.LittleEndian, m.Props.SelectionEnd)
+		_ = binary.Write(&out, binary.LittleEndian, m.Props.MaxLength)
+		_ = binary.Write(&out, binary.LittleEndian, uint64(m.Props.OnSubmit))
+		_ = binary.Write(&out, binary.LittleEndian, uint64(m.Props.OnSelection))
 		styles, err := MarshalTypedStyles(m.Style, m.Platform)
 		if err != nil {
 			return nil, err
@@ -118,6 +146,23 @@ func (b MutationBatch) MarshalBinary() ([]byte, error) {
 		}
 	}
 	return out.Bytes(), nil
+}
+
+func writeBool(out *bytes.Buffer, value bool) {
+	if value {
+		out.WriteByte(1)
+	} else {
+		out.WriteByte(0)
+	}
+}
+
+func writeBoundedString(out *bytes.Buffer, value, field string) error {
+	if len(value) > MaxProtocolString {
+		return &ProtocolError{Kind: "limit", Detail: field + " exceeds maximum length"}
+	}
+	_ = binary.Write(out, binary.LittleEndian, uint32(len(value)))
+	out.WriteString(value)
+	return nil
 }
 
 // UnmarshalMutationBatch decodes the renderer protocol (used by tests and non-native renderers).
@@ -260,6 +305,88 @@ func UnmarshalMutationBatch(data []byte) (MutationBatch, error) {
 			return MutationBatch{}, e
 		}
 		m.Props.Interactions = string(interactionBytes)
+		textWrap, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		textOverflow, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		m.Props.TextWrap = ui.TextWrapMode(textWrap)
+		m.Props.TextOverflow = ui.TextOverflow(textOverflow)
+		if e = binary.Read(r, binary.LittleEndian, &m.Props.MaxLines); e != nil {
+			return MutationBatch{}, e
+		}
+		selectable, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		m.Props.Selectable = selectable != 0
+		if m.Props.RichText, e = readBoundedString(r, data, "rich text"); e != nil {
+			return MutationBatch{}, e
+		}
+		var onLink uint64
+		if e = binary.Read(r, binary.LittleEndian, &onLink); e != nil {
+			return MutationBatch{}, e
+		}
+		m.Props.OnLink = ui.HandlerID(onLink)
+		if m.Props.Placeholder, e = readBoundedString(r, data, "placeholder"); e != nil {
+			return MutationBatch{}, e
+		}
+		inputMode, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		inputKind, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		returnKey, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		capitalization, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		autoCorrect, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		secure, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		multiline, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		readOnly, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		validation, e := r.ReadByte()
+		if e != nil {
+			return MutationBatch{}, e
+		}
+		m.Props.InputMode = ui.InputValueMode(inputMode)
+		m.Props.InputKind = ui.InputKind(inputKind)
+		m.Props.ReturnKey = ui.ReturnKey(returnKey)
+		m.Props.Capitalization = ui.TextCapitalization(capitalization)
+		m.Props.AutoCorrect = ui.AutoCorrectMode(autoCorrect)
+		m.Props.Secure, m.Props.Multiline, m.Props.ReadOnly = secure != 0, multiline != 0, readOnly != 0
+		m.Props.Validation = ui.ValidationState(validation)
+		if m.Props.ErrorText, e = readBoundedString(r, data, "input error"); e != nil {
+			return MutationBatch{}, e
+		}
+		var onSubmit, onSelection uint64
+		for _, field := range []any{&m.Props.SelectionStart, &m.Props.SelectionEnd, &m.Props.MaxLength, &onSubmit, &onSelection} {
+			if e = binary.Read(r, binary.LittleEndian, field); e != nil {
+				return MutationBatch{}, e
+			}
+		}
+		m.Props.OnSubmit, m.Props.OnSelection = ui.HandlerID(onSubmit), ui.HandlerID(onSelection)
 		var styleLength uint32
 		if e = binary.Read(r, binary.LittleEndian, &styleLength); e != nil {
 			return MutationBatch{}, e
@@ -291,4 +418,19 @@ func UnmarshalMutationBatch(data []byte) (MutationBatch, error) {
 		return MutationBatch{}, &ProtocolError{Kind: "trailing-data", Offset: len(data) - r.Len(), Detail: "unexpected bytes after mutation batch"}
 	}
 	return b, nil
+}
+
+func readBoundedString(r *bytes.Reader, data []byte, field string) (string, error) {
+	var length uint32
+	if err := binary.Read(r, binary.LittleEndian, &length); err != nil {
+		return "", err
+	}
+	if length > MaxProtocolString {
+		return "", &ProtocolError{Kind: "limit", Offset: len(data) - r.Len(), Detail: field + " exceeds maximum length"}
+	}
+	buf := make([]byte, length)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return "", err
+	}
+	return string(buf), nil
 }

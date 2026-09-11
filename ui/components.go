@@ -42,7 +42,7 @@ func Button(label string, onPress func()) *element {
 
 // TextInput creates an editable native text control. onChange receives user edits.
 func TextInput(value string, onChange func(string)) *element {
-	e := newElement(NodeTextInput, Props{Text: value})
+	e := newElement(NodeTextInput, Props{Text: value, SelectionStart: -1, SelectionEnd: -1})
 	e.node.Change = onChange
 	return e
 }
@@ -102,6 +102,35 @@ func (e *element) Height(value float32) *element {
 	e.node.Style.Layout.Height = Points(value)
 	return e
 }
+func (e *element) MinWidth(value float32) *element {
+	e.node.Style.Layout.MinWidth = Points(value)
+	return e
+}
+func (e *element) MinHeight(value float32) *element {
+	e.node.Style.Layout.MinHeight = Points(value)
+	return e
+}
+func (e *element) MaxWidth(value float32) *element {
+	e.node.Style.Layout.MaxWidth = Points(value)
+	return e
+}
+func (e *element) MaxHeight(value float32) *element {
+	e.node.Style.Layout.MaxHeight = Points(value)
+	return e
+}
+func (e *element) Margin(value float32) *element {
+	e.node.Style.Layout.Margin = Insets(value)
+	return e
+}
+func (e *element) MarginXY(horizontal, vertical float32) *element {
+	e.node.Style.Layout.Margin = InsetsXY(horizontal, vertical)
+	return e
+}
+func (e *element) PaddingXY(horizontal, vertical float32) *element {
+	e.node.Style.Layout.Padding = InsetsXY(horizontal, vertical)
+	applyLegacyStyle(&e.node.Props, e.node.Style)
+	return e
+}
 func (e *element) Align(value AxisAlignment) *element {
 	e.node.Props.Alignment = value
 	e.node.Style.Layout.Alignment = value
@@ -121,6 +150,12 @@ func (e *element) AspectRatio(value float32) *element {
 	e.node.Style.Layout.AspectRatio = value
 	return e
 }
+func (e *element) Absolute(inset EdgeInsets) *element {
+	e.node.Style.Layout.Position = PositionAbsolute
+	e.node.Style.Layout.Inset = inset
+	return e
+}
+func (e *element) Overflow(value Overflow) *element { e.node.Style.Layout.Overflow = value; return e }
 func (e *element) GridColumns(count int) *element {
 	if count < 1 {
 		count = 1
@@ -143,9 +178,8 @@ func (e *element) Bold() *element {
 	return e
 }
 
-// Styled applies the production typed style model. Fields supported by protocol
-// v7 are projected into legacy Props; remaining fields stay on Node for layout,
-// inspection, and the upcoming typed protocol.
+// Styled applies the production typed style model. Legacy scalar fields are
+// projected into Props while the complete style travels in protocol v10.
 func (e *element) Styled(style Style) *element {
 	e.node.Style = e.node.Style.Merge(style)
 	applyLegacyStyle(&e.node.Props, e.node.Style)
@@ -163,6 +197,34 @@ func (e *element) Foreground(color Color) *element {
 }
 func (e *element) CornerRadius(value float32) *element {
 	e.node.Style.Appearance.CornerRadius = value
+	return e
+}
+func (e *element) Border(width float32, color Color) *element {
+	e.node.Style.Appearance.Border = Border{Width: width, Color: color}
+	return e
+}
+func (e *element) Shadow(value Shadow) *element { e.node.Style.Appearance.Shadow = value; return e }
+func (e *element) Transform(value Transform) *element {
+	e.node.Style.Appearance.Transform = value
+	return e
+}
+func (e *element) Visibility(value Visibility) *element {
+	e.node.Style.Appearance.Visibility = value
+	return e
+}
+func (e *element) FontFamily(value string) *element { e.node.Style.Text.FontFamily = value; return e }
+func (e *element) FontWeight(value uint16) *element {
+	e.node.Style.Text.FontWeight = value
+	e.node.Props.Bold = value >= 600
+	return e
+}
+func (e *element) LineHeight(value float32) *element { e.node.Style.Text.LineHeight = value; return e }
+func (e *element) LetterSpacing(value float32) *element {
+	e.node.Style.Text.LetterSpacing = value
+	return e
+}
+func (e *element) HitSlop(value EdgeInsets) *element {
+	e.node.Style.Interaction.HitSlop = value
 	return e
 }
 func (e *element) Opacity(value float32) *element {

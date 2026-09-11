@@ -43,6 +43,13 @@ func TestLayoutMeasuredBatchesAndCachesIntrinsicSizes(t *testing.T) {
 	if native.calls != 1 {
 		t.Fatalf("cached layout made %d native calls", native.calls)
 	}
+	changed := ui.Text("one").LineLimit(2).Build()
+	if _, err = engine.LayoutMeasured(context.Background(), changed, Constraints{MaxWidth: 200, MaxHeight: 400}, native, cache); err != nil {
+		t.Fatal(err)
+	}
+	if native.calls != 2 {
+		t.Fatalf("text measurement props reused stale cache; calls=%d", native.calls)
+	}
 }
 
 func TestLayoutMeasuredRejectsIncompleteResults(t *testing.T) {

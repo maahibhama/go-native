@@ -238,6 +238,23 @@ func (r *Runtime) DispatchBool(id ui.HandlerID, value bool) bool {
 	return false
 }
 
+// DispatchSelection invokes a native UTF-16 selection-change callback by ID.
+func (r *Runtime) DispatchSelection(id ui.HandlerID, start, end int32) bool {
+	if start < 0 || end < start {
+		return false
+	}
+	r.timingMu.Lock()
+	r.eventAt = time.Now()
+	r.timingMu.Unlock()
+	if r.events.DispatchSelection(id, ui.TextSelection{Start: start, End: end}) {
+		return true
+	}
+	r.timingMu.Lock()
+	r.eventAt = time.Time{}
+	r.timingMu.Unlock()
+	return false
+}
+
 // DispatchGesture invokes a native gesture callback by ID.
 func (r *Runtime) DispatchGesture(id ui.HandlerID, event ui.GestureEvent) bool {
 	r.timingMu.Lock()
@@ -539,12 +556,43 @@ func (r *Runtime) bindHandlers(oldNode, n *ui.Node) {
 	}
 	if n.Type == ui.NodeTextInput {
 		if fn := n.Change; fn != nil {
+			previous := n.Props.Text
+			formatters := append([]ui.InputFormatter(nil), n.InputFormatters...)
+			change := func(proposed string) {
+				formatted := ui.ApplyInputFormatters(previous, proposed, formatters)
+				previous = formatted
+				fn(formatted)
+			}
 			if oldNode != nil && oldNode.Type == n.Type && oldNode.Props.OnChange != 0 {
 				n.Props.OnChange = oldNode.Props.OnChange
-				r.events.ReplaceValue(n.Props.OnChange, fn)
+				r.events.ReplaceValue(n.Props.OnChange, change)
 			} else {
-				n.Props.OnChange = r.events.RegisterValue(fn)
+				n.Props.OnChange = r.events.RegisterValue(change)
 			}
+		}
+		if fn := n.Submit; fn != nil {
+			if oldNode != nil && oldNode.Type == n.Type && oldNode.Props.OnSubmit != 0 {
+				n.Props.OnSubmit = oldNode.Props.OnSubmit
+				r.events.Replace(n.Props.OnSubmit, fn)
+			} else {
+				n.Props.OnSubmit = r.events.Register(fn)
+			}
+		}
+		if fn := n.Selection; fn != nil {
+			if oldNode != nil && oldNode.Type == n.Type && oldNode.Props.OnSelection != 0 {
+				n.Props.OnSelection = oldNode.Props.OnSelection
+				r.events.ReplaceSelection(n.Props.OnSelection, fn)
+			} else {
+				n.Props.OnSelection = r.events.RegisterSelection(fn)
+			}
+		}
+	}
+	if n.Type == ui.NodeText && n.Link != nil {
+		if oldNode != nil && oldNode.Type == n.Type && oldNode.Props.OnLink != 0 {
+			n.Props.OnLink = oldNode.Props.OnLink
+			r.events.ReplaceValue(n.Props.OnLink, n.Link)
+		} else {
+			n.Props.OnLink = r.events.RegisterValue(n.Link)
 		}
 	}
 	if n.Type == ui.NodeSwitch && n.Toggle != nil {
@@ -597,6 +645,9 @@ func releaseTree(events *EventRegistry, n *ui.Node) {
 	events.Release(n.Props.OnPress)
 	events.Release(n.Props.OnChange)
 	events.Release(n.Props.OnToggle)
+	events.Release(n.Props.OnLink)
+	events.Release(n.Props.OnSubmit)
+	events.Release(n.Props.OnSelection)
 	for _, id := range n.GestureHandlerIDs {
 		events.Release(id)
 	}

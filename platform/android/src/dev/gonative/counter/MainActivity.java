@@ -22,7 +22,19 @@ import android.widget.ImageView;
 import android.widget.ScrollView;
 import android.widget.HorizontalScrollView;
 import android.text.Editable;
+import android.text.InputFilter;
+import android.text.InputType;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextWatcher;
+import android.text.TextUtils;
+import android.text.method.LinkMovementMethod;
+import android.text.method.PasswordTransformationMethod;
+import android.text.style.ClickableSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
+import android.text.style.UnderlineSpan;
+import android.view.inputmethod.EditorInfo;
 import android.animation.Animator;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
@@ -69,6 +81,7 @@ public final class MainActivity extends Activity {
     private final LongSparseArray<View> views = new LongSparseArray<>();
     private final LongSparseArray<GestureBinding> gestureBindings = new LongSparseArray<>();
     private final WeakHashMap<EditText, TextWatcher> textWatchers = new WeakHashMap<>();
+    private final WeakHashMap<EditText, Boolean> initializedInputs = new WeakHashMap<>();
     private long rootNodeID;
     private float lastViewportWidth, lastViewportHeight, lastViewportScale;
     private final View.OnLayoutChangeListener viewportListener = new View.OnLayoutChangeListener() {
@@ -83,6 +96,7 @@ public final class MainActivity extends Activity {
     private native void nativeDispatchValueEvent(long handler, String value);
     private native void nativeDispatchBoolEvent(long handler, boolean value);
     private native void nativeDispatchGestureEvent(long handler, float translationX, float translationY, float velocityX, float velocityY);
+    private native void nativeDispatchSelectionEvent(long handler, int start, int end);
     private native void nativeStop();
     private native void nativeSetLifecycle(int state);
     private native void nativeDispatchFocus(long nodeID, boolean focused);
@@ -113,6 +127,7 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < gestureBindings.size(); i++) gestureBindings.valueAt(i).dispose();
         gestureBindings.clear();
         textWatchers.clear();
+        initializedInputs.clear();
         for (int i = 0; i < views.size(); i++) views.valueAt(i).animate().cancel();
         views.clear();
         super.onDestroy();
@@ -150,7 +165,7 @@ public final class MainActivity extends Activity {
     private byte[] measureNativeBatchOnUiThread(byte[] payload) {
         try {
             ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
-            if (in.remaining() < 6 || Short.toUnsignedInt(in.getShort()) != 1) return null;
+            if (in.remaining() < 6 || Short.toUnsignedInt(in.getShort()) != 2) return null;
             int count = in.getInt();
             if (count < 0 || count > 100000) return null;
             ArrayList<NativeMeasurement> measured = new ArrayList<>(count);
@@ -161,18 +176,32 @@ public final class MainActivity extends Activity {
                 float minWidth = in.getFloat(), maxWidth = in.getFloat(), minHeight = in.getFloat(), maxHeight = in.getFloat();
                 String text = readRequiredString(in);
                 String imageSource = readRequiredString(in);
+                if (in.remaining() < 13) return null;
+                int textWrap = Byte.toUnsignedInt(in.get()), textOverflow = Byte.toUnsignedInt(in.get());
+                long maxLinesValue = Integer.toUnsignedLong(in.getInt());
+                if (maxLinesValue > Integer.MAX_VALUE) return null;
+                int maxLines = (int) maxLinesValue;
+                boolean selectable = in.get() != 0;
+                int richTextLength = in.getInt();
+                if (richTextLength < 0 || richTextLength > 1048576 || richTextLength > in.remaining()) return null;
+                byte[] richText = new byte[richTextLength]; in.get(richText);
+                String placeholder = readRequiredString(in);
+                if (in.remaining() < 7) return null;
+                int inputKind = Byte.toUnsignedInt(in.get());
+                boolean secure = in.get() != 0, multiline = in.get() != 0;
+                int maxLength = in.getInt();
                 if (in.remaining() < 4) return null;
                 int styleLength = in.getInt();
                 if (styleLength < 0 || styleLength > 1048576 || styleLength > in.remaining()) return null;
                 byte[] typedStyle = new byte[styleLength];
                 in.get(typedStyle);
-                measured.add(measureNativeControl(id, kind, text, imageSource, typedStyle, minWidth, maxWidth, minHeight, maxHeight));
+                measured.add(measureNativeControl(id, kind, text, imageSource, typedStyle, minWidth, maxWidth, minHeight, maxHeight, textWrap, textOverflow, maxLines, selectable, richText, placeholder, inputKind, secure, multiline, maxLength));
             }
             if (in.hasRemaining()) return null;
             int capacity = 6;
             for (NativeMeasurement item : measured) capacity += 20 + item.error.getBytes(StandardCharsets.UTF_8).length;
             ByteBuffer out = ByteBuffer.allocate(capacity).order(ByteOrder.LITTLE_ENDIAN);
-            out.putShort((short) 1).putInt(measured.size());
+            out.putShort((short) 2).putInt(measured.size());
             for (NativeMeasurement item : measured) {
                 byte[] error = item.error.getBytes(StandardCharsets.UTF_8);
                 out.putLong(item.id).putFloat(item.width).putFloat(item.height).putInt(error.length).put(error);
@@ -185,13 +214,19 @@ public final class MainActivity extends Activity {
     }
 
     private NativeMeasurement measureNativeControl(long id, int kind, String text, String imageSource, byte[] typedStyle,
-                                                    float minWidth, float maxWidth, float minHeight, float maxHeight) {
+                                                    float minWidth, float maxWidth, float minHeight, float maxHeight, int textWrap,
+                                                    int textOverflow, int maxLines, boolean selectable, byte[] richText, String placeholder,
+                                                    int inputKind, boolean secure, boolean multiline, int maxLength) {
         try {
             View view = makeView(kind, false);
             if (view instanceof TextView) {
                 TextView label = (TextView) view;
-                label.setText(text);
+                CharSequence rendered = decodeRichText(richText, 0, false);
+                label.setText(rendered == null ? text : rendered);
                 label.setIncludeFontPadding(false);
+                label.setSingleLine(textWrap == 2 || (view instanceof EditText && !multiline));
+                label.setMaxLines(maxLines > 0 ? maxLines : Integer.MAX_VALUE);
+                label.setEllipsize(textOverflow == 1 ? TextUtils.TruncateAt.START : textOverflow == 2 ? TextUtils.TruncateAt.MIDDLE : textOverflow == 3 ? TextUtils.TruncateAt.END : null);
                 if (view instanceof Button) {
                     Button button = (Button) view;
                     button.setAllCaps(false);
@@ -203,7 +238,11 @@ public final class MainActivity extends Activity {
                 }
                 if (view instanceof EditText) {
                     EditText field = (EditText) view;
-                    field.setSingleLine(true);
+                    field.setSingleLine(!multiline);
+                    field.setHint(placeholder);
+                    field.setInputType(resolveInputType(inputKind, 0, 0, secure, multiline));
+                    field.setTransformationMethod(secure ? PasswordTransformationMethod.getInstance() : null);
+                    field.setFilters(maxLength > 0 ? new InputFilter[]{new InputFilter.LengthFilter(maxLength)} : new InputFilter[0]);
                     field.setMinWidth(dp(240));
                     field.setMinimumWidth(dp(240));
                     field.setMinHeight(dp(44));
@@ -258,8 +297,9 @@ public final class MainActivity extends Activity {
             long started = System.nanoTime();
             ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
             if (in.remaining() < 14) return;
-            if (Short.toUnsignedInt(in.getShort()) != 9) return;
+            if (Short.toUnsignedInt(in.getShort()) != 10) return;
             int count = in.getInt();
+            if (count < 0 || count > 100000) return;
             long sequence = in.getLong();
             for (int operation = 0; operation < count && in.hasRemaining(); operation++) {
                 int mutation = Byte.toUnsignedInt(in.get());
@@ -280,18 +320,50 @@ public final class MainActivity extends Activity {
                 long toggleHandler = in.getLong();
                 boolean checked = in.get() != 0;
                 float progress = in.getFloat();
-                String text = readString(in);
-                String accessibility = readString(in);
-                String hint = readString(in);
+                String text = readRequiredString(in);
+                String accessibility = readRequiredString(in);
+                String hint = readRequiredString(in);
                 int role = Byte.toUnsignedInt(in.get());
                 boolean focused = in.get() != 0;
                 boolean scalesText = in.get() != 0;
-                String imageSource = readString(in);
+                String imageSource = readRequiredString(in);
                 int imageMode = Byte.toUnsignedInt(in.get());
                 boolean horizontal = in.get() != 0;
                 int interactionLength = in.remaining() >= 4 ? in.getInt() : 0;
-                byte[] interactions = new byte[Math.max(0, Math.min(interactionLength, in.remaining()))];
+                if (interactionLength < 0 || interactionLength > 1048576 || interactionLength > in.remaining()) return;
+                byte[] interactions = new byte[interactionLength];
                 if (interactions.length > 0) in.get(interactions);
+                if (in.remaining() < 9) return;
+                int textWrap = Byte.toUnsignedInt(in.get());
+                int textOverflow = Byte.toUnsignedInt(in.get());
+                long maxLinesValue = Integer.toUnsignedLong(in.getInt());
+                if (maxLinesValue > Integer.MAX_VALUE) return;
+                int maxLines = (int) maxLinesValue;
+                boolean selectable = in.get() != 0;
+                int richTextLength = in.getInt();
+                if (richTextLength < 0 || richTextLength > 1048576 || richTextLength > in.remaining()) return;
+                byte[] richText = new byte[richTextLength];
+                in.get(richText);
+                if (in.remaining() < 12) return;
+                long linkHandler = in.getLong();
+                String placeholder = readRequiredString(in);
+                if (in.remaining() < 36) return;
+                int inputMode = Byte.toUnsignedInt(in.get());
+                int inputKind = Byte.toUnsignedInt(in.get());
+                int returnKey = Byte.toUnsignedInt(in.get());
+                int capitalization = Byte.toUnsignedInt(in.get());
+                int autoCorrect = Byte.toUnsignedInt(in.get());
+                boolean secure = in.get() != 0;
+                boolean multiline = in.get() != 0;
+                boolean readOnly = in.get() != 0;
+                int validationState = Byte.toUnsignedInt(in.get());
+                String errorText = readRequiredString(in);
+                if (in.remaining() < 32) return;
+                int selectionStart = in.getInt();
+                int selectionEnd = in.getInt();
+                int maxLength = in.getInt();
+                long submitHandler = in.getLong();
+                long selectionHandler = in.getLong();
                 int styleLength = in.remaining() >= 4 ? in.getInt() : -1;
                 if (styleLength < 0 || styleLength > 1048576 || styleLength > in.remaining()) return;
                 byte[] typedStyle = new byte[styleLength];
@@ -310,7 +382,7 @@ public final class MainActivity extends Activity {
                     });
                     views.put(nodeID, view);
                     if (rootNodeID == 0) rootNodeID = nodeID;
-                    style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
+                    style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode, textWrap, textOverflow, maxLines, selectable, richText, linkHandler, placeholder, inputMode, inputKind, returnKey, capitalization, autoCorrect, secure, multiline, readOnly, validationState, errorText, selectionStart, selectionEnd, maxLength, submitHandler, selectionHandler);
                     applyTypedStyle(view, typedStyle);
                     applyComputedFrame(nodeID, view, hasFrame, frameX, frameY, frameWidth, frameHeight);
                     applyInteractions(nodeID, view, interactions);
@@ -321,7 +393,7 @@ public final class MainActivity extends Activity {
                     }
                 } else if (mutation == UPDATE) {
                     if (view != null) {
-                        style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode);
+                        style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode, textWrap, textOverflow, maxLines, selectable, richText, linkHandler, placeholder, inputMode, inputKind, returnKey, capitalization, autoCorrect, secure, multiline, readOnly, validationState, errorText, selectionStart, selectionEnd, maxLength, submitHandler, selectionHandler);
                         applyTypedStyle(view, typedStyle);
                         applyComputedFrame(nodeID, view, hasFrame, frameX, frameY, frameWidth, frameHeight);
                         applyInteractions(nodeID, view, interactions);
@@ -356,7 +428,7 @@ public final class MainActivity extends Activity {
                     }
                 } else if (mutation == DELETE) {
                     detach(view);
-                    if (view instanceof EditText) textWatchers.remove((EditText) view);
+                    if (view instanceof EditText) { textWatchers.remove((EditText) view); initializedInputs.remove((EditText) view); }
                     GestureBinding binding = gestureBindings.get(nodeID);
                     if (binding != null) binding.dispose();
                     gestureBindings.remove(nodeID);
@@ -397,7 +469,7 @@ public final class MainActivity extends Activity {
             return tv;
         }
         if (kind == BUTTON) return new Button(this);
-        if (kind == TEXT_INPUT) return new EditText(this);
+        if (kind == TEXT_INPUT) return new NativeEditText();
         if (kind == SWITCH) return new Switch(this);
         if (kind == PROGRESS_INDICATOR) { ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); bar.setMax(10000); return bar; }
         if (kind == IMAGE) return new ImageView(this);
@@ -482,14 +554,26 @@ public final class MainActivity extends Activity {
 
     private void style(View view, int kind, String text, float width, float height, float padding,
                        float gap, int alignment, float fontSize, boolean bold, long handler, long changeHandler, long toggleHandler, boolean checked, float progress,
-                       String accessibility, String hint, int role, boolean focused, boolean scalesText, String imageSource, int imageMode) {
+                       String accessibility, String hint, int role, boolean focused, boolean scalesText, String imageSource, int imageMode,
+                       int textWrap, int textOverflow, int maxLines, boolean selectable, byte[] richText, long linkHandler, String placeholder,
+                       int inputMode, int inputKind, int returnKey, int capitalization, int autoCorrect, boolean secure, boolean multiline,
+                       boolean readOnly, int validationState, String errorText, int selectionStart, int selectionEnd, int maxLength,
+                       long submitHandler, long selectionHandler) {
         if (kind == TEXT && view instanceof TextView) {
             TextView textView = (TextView) view;
-            textView.setText(text);
+            CharSequence rendered = decodeRichText(richText, linkHandler, scalesText);
+            textView.setText(rendered == null ? text : rendered);
             if (fontSize > 0) textView.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize);
             textView.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
             textView.setIncludeFontPadding(false);
             textView.setTextColor(android.graphics.Color.parseColor("#111111"));
+            textView.setSingleLine(textWrap == 2);
+            textView.setHorizontallyScrolling(textWrap == 2);
+            textView.setMaxLines(maxLines > 0 ? maxLines : Integer.MAX_VALUE);
+            textView.setEllipsize(textOverflow == 1 ? TextUtils.TruncateAt.START : textOverflow == 2 ? TextUtils.TruncateAt.MIDDLE : textOverflow == 3 ? TextUtils.TruncateAt.END : null);
+            textView.setTextIsSelectable(selectable);
+            textView.setLinksClickable(linkHandler != 0);
+            textView.setMovementMethod(linkHandler != 0 ? LinkMovementMethod.getInstance() : null);
         }
         if (kind == BUTTON && view instanceof Button) {
             Button btn = (Button) view;
@@ -519,11 +603,12 @@ public final class MainActivity extends Activity {
         }
         if (view instanceof EditText) {
             EditText field = (EditText) view;
-            field.setSingleLine(true);
-            field.setGravity(Gravity.CENTER_VERTICAL);
+            if (field instanceof NativeEditText) ((NativeEditText) field).selectionHandler = 0;
+            field.setSingleLine(!multiline);
+            field.setGravity(multiline ? Gravity.TOP | Gravity.START : Gravity.CENTER_VERTICAL);
             field.setIncludeFontPadding(false);
             field.setMinHeight(dp(44));
-            if (hint != null && !hint.isEmpty()) field.setHint(hint);
+            field.setHint(placeholder);
             field.setTextColor(android.graphics.Color.BLACK);
             field.setHintTextColor(android.graphics.Color.parseColor("#8E8E93"));
             android.graphics.drawable.GradientDrawable fieldBg = new android.graphics.drawable.GradientDrawable();
@@ -535,9 +620,34 @@ public final class MainActivity extends Activity {
             field.setPadding(padX, padY, padX, padY);
             TextWatcher existing = textWatchers.get(field);
             if (existing != null) field.removeTextChangedListener(existing);
-            if (text != null && !field.getText().toString().equals(text)) { field.setText(text); field.setSelection(field.length()); }
+            boolean initialize = !initializedInputs.containsKey(field);
+            if ((inputMode == 0 || initialize) && text != null && !field.getText().toString().equals(text)) field.setText(text);
+            initializedInputs.put(field, Boolean.TRUE);
             field.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize > 0 ? fontSize : 16);
             field.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
+            field.setInputType(resolveInputType(inputKind, capitalization, autoCorrect, secure, multiline));
+            field.setTransformationMethod(secure ? PasswordTransformationMethod.getInstance() : null);
+            field.setImeOptions(resolveImeAction(returnKey) | (multiline && returnKey == 0 ? EditorInfo.IME_FLAG_NO_ENTER_ACTION : 0));
+            field.setMaxLines(maxLines > 0 ? maxLines : (multiline ? Integer.MAX_VALUE : 1));
+            field.setFilters(maxLength > 0 ? new InputFilter[]{new InputFilter.LengthFilter(maxLength)} : new InputFilter[0]);
+            field.setFocusable(!readOnly);
+            field.setFocusableInTouchMode(!readOnly);
+            field.setCursorVisible(!readOnly);
+            field.setLongClickable(!readOnly);
+            if (validationState == 2) field.setError(errorText.isEmpty() ? "Invalid value" : errorText); else field.setError(null);
+            final long actionHandler = submitHandler;
+            field.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+                @Override public boolean onEditorAction(TextView ignored, int actionId, android.view.KeyEvent event) {
+                    boolean enter = event != null && event.getKeyCode() == android.view.KeyEvent.KEYCODE_ENTER && event.getAction() == android.view.KeyEvent.ACTION_UP;
+                    if (actionHandler != 0 && (actionId != EditorInfo.IME_ACTION_NONE || (!multiline && enter))) { nativeDispatchEvent(actionHandler); return true; }
+                    return false;
+                }
+            });
+            if (selectionStart >= 0 && selectionEnd >= selectionStart) {
+                int safeStart = Math.min(selectionStart, field.length()), safeEnd = Math.min(selectionEnd, field.length());
+                if (field.getSelectionStart() != safeStart || field.getSelectionEnd() != safeEnd) field.setSelection(safeStart, safeEnd);
+            } else if (initialize) field.setSelection(field.length());
+            if (field instanceof NativeEditText) ((NativeEditText) field).selectionHandler = selectionHandler;
             final long eventHandler = changeHandler;
             TextWatcher watcher = new TextWatcher() {
                 public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -605,6 +715,10 @@ public final class MainActivity extends Activity {
                 else if (role == 4) info.setClassName("android.widget.ImageView");
                 if (android.os.Build.VERSION.SDK_INT >= 26 && !hint.isEmpty()) info.setHintText(hint);
                 if (android.os.Build.VERSION.SDK_INT >= 28 && role == 3) info.setHeading(true);
+                if (view instanceof EditText && validationState == 2) {
+                    info.setContentInvalid(true);
+                    info.setError(errorText.isEmpty() ? "Invalid value" : errorText);
+                }
             }
         });
         if (focused) {
@@ -629,6 +743,72 @@ public final class MainActivity extends Activity {
     }
 
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+
+    private int resolveInputType(int kind, int capitalization, int autoCorrect, boolean secure, boolean multiline) {
+        int type;
+        if (kind == 1) type = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS;
+        else if (kind == 2) type = InputType.TYPE_CLASS_PHONE;
+        else if (kind == 3) type = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI;
+        else if (kind == 4) type = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED;
+        else if (kind == 5) type = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL | InputType.TYPE_NUMBER_FLAG_SIGNED;
+        else type = InputType.TYPE_CLASS_TEXT | (kind == 6 ? InputType.TYPE_TEXT_VARIATION_FILTER : InputType.TYPE_TEXT_VARIATION_NORMAL);
+        if ((type & InputType.TYPE_CLASS_TEXT) != 0) {
+            if (capitalization == 1) type |= InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;
+            else if (capitalization == 2) type |= InputType.TYPE_TEXT_FLAG_CAP_WORDS;
+            else if (capitalization == 3) type |= InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS;
+            if (autoCorrect == 1) type |= InputType.TYPE_TEXT_FLAG_AUTO_CORRECT;
+            else if (autoCorrect == 2) type |= InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+            if (multiline) type |= InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+            if (secure) type = (type & ~InputType.TYPE_MASK_VARIATION) | InputType.TYPE_TEXT_VARIATION_PASSWORD;
+        }
+        return type;
+    }
+
+    private int resolveImeAction(int key) {
+        if (key == 1) return EditorInfo.IME_ACTION_DONE;
+        if (key == 2) return EditorInfo.IME_ACTION_GO;
+        if (key == 3) return EditorInfo.IME_ACTION_NEXT;
+        if (key == 4) return EditorInfo.IME_ACTION_SEARCH;
+        if (key == 5) return EditorInfo.IME_ACTION_SEND;
+        return EditorInfo.IME_ACTION_NONE;
+    }
+
+    private CharSequence decodeRichText(byte[] payload, final long linkHandler, boolean scalesText) {
+        if (payload == null || payload.length == 0) return null;
+        try {
+            ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+            if (in.remaining() < 6 || Short.toUnsignedInt(in.getShort()) != 1) return null;
+            long count = Integer.toUnsignedLong(in.getInt());
+            if (count > 100000) return null;
+            SpannableStringBuilder output = new SpannableStringBuilder();
+            for (long i = 0; i < count; i++) {
+                final String spanText = readRequiredString(in), link = readRequiredString(in);
+                if (in.remaining() < 12) return null;
+                float size = in.getFloat(); int weight = Short.toUnsignedInt(in.getShort()); int flags = Byte.toUnsignedInt(in.get()); boolean hasColor = in.get() != 0;
+                int red = Byte.toUnsignedInt(in.get()), green = Byte.toUnsignedInt(in.get()), blue = Byte.toUnsignedInt(in.get()), alpha = Byte.toUnsignedInt(in.get());
+                int color = android.graphics.Color.argb(alpha, red, green, blue);
+                int start = output.length(); output.append(spanText); int end = output.length();
+                if (size > 0) {
+                    int pixels = Math.round(TypedValue.applyDimension(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, size, getResources().getDisplayMetrics()));
+                    output.setSpan(new android.text.style.AbsoluteSizeSpan(pixels), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+                if (weight >= 600 || (flags & 2) != 0) output.setSpan(new StyleSpan(weight >= 600 && (flags & 2) != 0 ? Typeface.BOLD_ITALIC : weight >= 600 ? Typeface.BOLD : Typeface.ITALIC), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                if ((flags & 1) != 0) output.setSpan(new UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                if (hasColor) output.setSpan(new ForegroundColorSpan(color), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                if (!link.isEmpty() && linkHandler != 0) output.setSpan(new ClickableSpan() { @Override public void onClick(View widget) { nativeDispatchValueEvent(linkHandler, link); } }, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            return in.hasRemaining() ? null : output;
+        } catch (Throwable ignored) { return null; }
+    }
+
+    private final class NativeEditText extends EditText {
+        long selectionHandler;
+        NativeEditText() { super(MainActivity.this); }
+        @Override protected void onSelectionChanged(int start, int end) {
+            super.onSelectionChanged(start, end);
+            if (selectionHandler != 0) nativeDispatchSelectionEvent(selectionHandler, start, end);
+        }
+    }
 
     private void applyInteractions(long nodeID, View view, byte[] payload) {
         if (view == null) return;

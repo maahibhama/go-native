@@ -15,12 +15,19 @@ For implementation work in this repository, load the project skill at [`.agents/
 
 - `ui/node.go`: node types, IDs, `Props`, component contract, explicit identity.
 - `ui/components.go`: public primitives and fluent modifiers.
+- `ui/layout_components.go`: layout composition API (`Row`, `Column`, `Stack`, `Spacer`, `Center`, `AspectRatio`, `SafeArea`, `KeyboardAvoidingView`, `ScrollView`, `Divider`).
+- `ui/text_input.go`: input controls, rich-text spans, selection, submit, validation, formatters.
+- `ui/design.go`: typed styles, themes, design tokens, layout geometry.
 - `ui/state.go`: goroutine-safe state and the process-wide render scheduler.
 - `ui/intents.go`: gesture and animation contracts.
 - `ui/presentation.go`: navigation/modal contracts; these currently expose metadata and fallback content, not full native mounting.
 - `runtime/reconciler.go`: mutation ordering and keyed/unkeyed identity behavior.
 - `runtime/runtime.go`: scheduling, handler binding/release, diagnostics, timing, and renderer calls.
-- `runtime/protocol.go`: canonical binary wire layout and protocol version.
+- `runtime/protocol.go`: canonical binary wire layout and protocol version (currently v10).
+- `runtime/style_protocol.go`: fixed-width typed-style binary encoding and platform override groups.
+- `runtime/layout/`: Go-owned constraint/flexbox/grid layout engine, intrinsic measurement cache, and measurement wire protocol v2 (`measurement_protocol.go`).
+- `runtime/capabilities.go`: runtime protocol negotiation and feature capability flags.
+- `runtime/headless/`: deterministic headless mutation renderer for fast off-screen tests.
 - `runtime/interactions.go`: nested gesture/animation payload embedded in `Props.Interactions`.
 - `platform/ios/GoNativeRenderer.m`: UIKit decoder and renderer.
 - `platform/android/src/dev/gonative/counter/MainActivity.java`: Android decoder and renderer.
@@ -36,15 +43,15 @@ Narrative documentation can lag implementation. Resolve discrepancies in this or
 
 ### Protocol changes
 
-Any wire-visible change—including `ui.NodeType`, mutation values, `ui.Props`, interaction payloads, or field order—must be reviewed across:
+Any wire-visible change—including `ui.NodeType`, mutation values, `ui.Props`, interaction payloads, style payloads, measurement fields, or field order—must be reviewed across:
 
 1. `ui/` declarations and tests;
-2. `runtime/protocol.go`, `runtime/interactions.go`, and protocol/runtime tests;
+2. `runtime/protocol.go`, `runtime/interactions.go`, `runtime/style_protocol.go`, `runtime/layout/measurement_protocol.go`, and protocol/runtime tests;
 3. iOS and Android framework renderers;
 4. `cmd/gonative/templates.go` generated renderer/bridge text;
 5. checked-in generated example renderers under `examples/my-project/`.
 
-The current protocol version is `7`. Native decoders currently compare literal `7` values, so search for the old version before bumping it. Preserve exact field order, byte widths, signedness, little-endian encoding, and length-prefix handling.
+The current outer mutation batch protocol version is `10`. The current native measurement protocol version is `2`. Native decoders compare literal version values, so search for the old version before bumping it. Preserve exact field order, byte widths, signedness, little-endian encoding, and length-prefix handling.
 
 ### Identity and handlers
 

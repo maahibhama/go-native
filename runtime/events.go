@@ -8,16 +8,42 @@ import (
 
 // EventRegistry owns Go callbacks referenced by stable integer IDs.
 type EventRegistry struct {
-	next            atomic.Uint64
-	mu              sync.RWMutex
-	handlers        map[ui.HandlerID]func()
-	valueHandlers   map[ui.HandlerID]func(string)
-	boolHandlers    map[ui.HandlerID]func(bool)
-	gestureHandlers map[ui.HandlerID]func(ui.GestureEvent)
+	next              atomic.Uint64
+	mu                sync.RWMutex
+	handlers          map[ui.HandlerID]func()
+	valueHandlers     map[ui.HandlerID]func(string)
+	boolHandlers      map[ui.HandlerID]func(bool)
+	gestureHandlers   map[ui.HandlerID]func(ui.GestureEvent)
+	selectionHandlers map[ui.HandlerID]func(ui.TextSelection)
 }
 
 func NewEventRegistry() *EventRegistry {
-	return &EventRegistry{handlers: make(map[ui.HandlerID]func()), valueHandlers: make(map[ui.HandlerID]func(string)), boolHandlers: make(map[ui.HandlerID]func(bool)), gestureHandlers: make(map[ui.HandlerID]func(ui.GestureEvent))}
+	return &EventRegistry{handlers: make(map[ui.HandlerID]func()), valueHandlers: make(map[ui.HandlerID]func(string)), boolHandlers: make(map[ui.HandlerID]func(bool)), gestureHandlers: make(map[ui.HandlerID]func(ui.GestureEvent)), selectionHandlers: make(map[ui.HandlerID]func(ui.TextSelection))}
+}
+func (r *EventRegistry) RegisterSelection(fn func(ui.TextSelection)) ui.HandlerID {
+	if fn == nil {
+		return 0
+	}
+	id := ui.HandlerID(r.next.Add(1))
+	r.mu.Lock()
+	r.selectionHandlers[id] = fn
+	r.mu.Unlock()
+	return id
+}
+func (r *EventRegistry) DispatchSelection(id ui.HandlerID, value ui.TextSelection) bool {
+	r.mu.RLock()
+	fn := r.selectionHandlers[id]
+	r.mu.RUnlock()
+	if fn == nil {
+		return false
+	}
+	fn(value)
+	return true
+}
+func (r *EventRegistry) ReplaceSelection(id ui.HandlerID, fn func(ui.TextSelection)) {
+	r.mu.Lock()
+	r.selectionHandlers[id] = fn
+	r.mu.Unlock()
 }
 func (r *EventRegistry) RegisterValue(fn func(string)) ui.HandlerID {
 	if fn == nil {
@@ -128,5 +154,6 @@ func (r *EventRegistry) Release(id ui.HandlerID) {
 	delete(r.valueHandlers, id)
 	delete(r.boolHandlers, id)
 	delete(r.gestureHandlers, id)
+	delete(r.selectionHandlers, id)
 	r.mu.Unlock()
 }

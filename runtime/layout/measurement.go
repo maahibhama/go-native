@@ -15,8 +15,24 @@ type MeasurementRequest struct {
 	NodeType    ui.NodeType
 	Text        string
 	ImageSource string
+	TextProps   TextMeasurementProps
 	Style       ui.Style
 	Constraints Constraints
+}
+
+// TextMeasurementProps contains only geometry-affecting text/input values. It
+// is comparable so it can participate in deterministic measurement cache keys.
+type TextMeasurementProps struct {
+	Wrap        ui.TextWrapMode
+	Overflow    ui.TextOverflow
+	MaxLines    uint32
+	Selectable  bool
+	RichText    string
+	Placeholder string
+	InputKind   ui.InputKind
+	Secure      bool
+	Multiline   bool
+	MaxLength   int32
 }
 
 type MeasurementResult struct {
@@ -34,6 +50,7 @@ type measurementKey struct {
 	nodeType    ui.NodeType
 	text, image string
 	style       ui.Style
+	textProps   TextMeasurementProps
 	constraints Constraints
 }
 
@@ -139,7 +156,7 @@ func collectMeasurements(node *ui.Node, c Constraints, parentW, parentH float32,
 		}
 		*nextID++
 		id := *nextID
-		*requests = append(*requests, MeasurementRequest{ID: id, NodeType: node.Type, Text: node.Props.Text, ImageSource: node.Props.ImageSource, Style: node.Style, Constraints: childConstraints})
+		*requests = append(*requests, MeasurementRequest{ID: id, NodeType: node.Type, Text: node.Props.Text, ImageSource: node.Props.ImageSource, TextProps: measurementTextProps(node), Style: node.Style, Constraints: childConstraints})
 		keys[id] = key
 		return
 	}
@@ -149,5 +166,10 @@ func collectMeasurements(node *ui.Node, c Constraints, parentW, parentH float32,
 }
 
 func makeMeasurementKey(node *ui.Node, c Constraints) measurementKey {
-	return measurementKey{nodeType: node.Type, text: node.Props.Text, image: node.Props.ImageSource, style: node.Style, constraints: c}
+	return measurementKey{nodeType: node.Type, text: node.Props.Text, image: node.Props.ImageSource, textProps: measurementTextProps(node), style: node.Style, constraints: c}
+}
+
+func measurementTextProps(node *ui.Node) TextMeasurementProps {
+	p := node.Props
+	return TextMeasurementProps{Wrap: p.TextWrap, Overflow: p.TextOverflow, MaxLines: p.MaxLines, Selectable: p.Selectable, RichText: p.RichText, Placeholder: p.Placeholder, InputKind: p.InputKind, Secure: p.Secure, Multiline: p.Multiline, MaxLength: p.MaxLength}
 }

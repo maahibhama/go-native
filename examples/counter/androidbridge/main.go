@@ -141,6 +141,13 @@ func GoNativeAndroidDispatchGestureEvent(handler C.uint64_t, translationX, trans
 	}
 }
 
+//export GoNativeAndroidDispatchSelectionEvent
+func GoNativeAndroidDispatchSelectionEvent(handler C.uint64_t, start, end C.int32_t) {
+	if appRuntime != nil {
+		appRuntime.DispatchSelection(ui.HandlerID(handler), int32(start), int32(end))
+	}
+}
+
 //export GoNativeAndroidStop
 func GoNativeAndroidStop() {
 	if appRuntime != nil {

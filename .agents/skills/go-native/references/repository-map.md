@@ -6,6 +6,9 @@ Read only the sections relevant to the current task.
 
 - `ui/node.go`: wire-facing node/prop types, identity, component construction.
 - `ui/components.go`: supported native primitives and modifiers.
+- `ui/layout_components.go`: layout composition primitives (`Row`, `Column`, `Stack`, `Spacer`, `Center`, `AspectRatio`, `SafeArea`, `KeyboardAvoidingView`, `ScrollView`, `Divider`).
+- `ui/text_input.go`: input controls, rich-text spans, selection, submit, validation, formatters.
+- `ui/design.go`: typed styles, themes, tokens, geometry.
 - `ui/state.go`: state synchronization and scheduler hook.
 - `ui/intents.go`: gesture and animation metadata.
 - `ui/presentation.go`: navigation and modal metadata contracts.
@@ -17,7 +20,11 @@ Public API additions need package tests and an assessment of whether they change
 - `runtime/reconciler.go`: create/delete/update/insert/remove/move ordering.
 - `runtime/runtime.go`: rendering lifecycle, ID stabilization, handler reuse/release, diagnostics and timing.
 - `runtime/events.go`: typed callback registries.
-- `runtime/protocol.go`: outer mutation-batch wire format, currently version 8.
+- `runtime/protocol.go`: outer mutation-batch wire format, currently version 10.
+- `runtime/style_protocol.go`: typed style fixed-width wire layout.
+- `runtime/layout/`: Go-owned constraint/flexbox/grid layout engine, intrinsic measurement cache, and measurement protocol v2.
+- `runtime/capabilities.go`: protocol capability negotiation flags.
+- `runtime/headless/`: deterministic headless mutation renderer for off-screen validation.
 - `runtime/interactions.go`: inner gesture/animation wire payload.
 - `runtime/diagnostics.go`: bounded structured logs and detached snapshots.
 - `runtime/inspector/service.go`: loopback HTTP exposure of logs/tree.

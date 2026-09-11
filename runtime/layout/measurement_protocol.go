@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	measurementProtocolVersion uint16 = 1
+	measurementProtocolVersion uint16 = 2
 	maxMeasurementItems               = 100_000
 	maxMeasurementPayload             = 16 << 20
 )
@@ -34,6 +34,20 @@ func MarshalMeasurementRequests(requests []MeasurementRequest) ([]byte, error) {
 				return nil, err
 			}
 		}
+		out.WriteByte(byte(request.TextProps.Wrap))
+		out.WriteByte(byte(request.TextProps.Overflow))
+		_ = binary.Write(&out, binary.LittleEndian, request.TextProps.MaxLines)
+		writeMeasurementBool(&out, request.TextProps.Selectable)
+		if err := writeMeasurementString(&out, request.TextProps.RichText); err != nil {
+			return nil, err
+		}
+		if err := writeMeasurementString(&out, request.TextProps.Placeholder); err != nil {
+			return nil, err
+		}
+		out.WriteByte(byte(request.TextProps.InputKind))
+		writeMeasurementBool(&out, request.TextProps.Secure)
+		writeMeasurementBool(&out, request.TextProps.Multiline)
+		_ = binary.Write(&out, binary.LittleEndian, request.TextProps.MaxLength)
 		style, err := gnruntime.MarshalTypedStyles(request.Style, ui.PlatformStyle{})
 		if err != nil {
 			return nil, err
@@ -74,6 +88,45 @@ func UnmarshalMeasurementRequests(data []byte) ([]MeasurementRequest, error) {
 		if request.ImageSource, err = readMeasurementString(reader); err != nil {
 			return nil, err
 		}
+		wrap, e := reader.ReadByte()
+		if e != nil {
+			return nil, e
+		}
+		overflow, e := reader.ReadByte()
+		if e != nil {
+			return nil, e
+		}
+		request.TextProps.Wrap, request.TextProps.Overflow = ui.TextWrapMode(wrap), ui.TextOverflow(overflow)
+		if err = binary.Read(reader, binary.LittleEndian, &request.TextProps.MaxLines); err != nil {
+			return nil, err
+		}
+		selectable, e := reader.ReadByte()
+		if e != nil {
+			return nil, e
+		}
+		request.TextProps.Selectable = selectable != 0
+		if request.TextProps.RichText, err = readMeasurementString(reader); err != nil {
+			return nil, err
+		}
+		if request.TextProps.Placeholder, err = readMeasurementString(reader); err != nil {
+			return nil, err
+		}
+		inputKind, e := reader.ReadByte()
+		if e != nil {
+			return nil, e
+		}
+		secure, e := reader.ReadByte()
+		if e != nil {
+			return nil, e
+		}
+		multiline, e := reader.ReadByte()
+		if e != nil {
+			return nil, e
+		}
+		request.TextProps.InputKind, request.TextProps.Secure, request.TextProps.Multiline = ui.InputKind(inputKind), secure != 0, multiline != 0
+		if err = binary.Read(reader, binary.LittleEndian, &request.TextProps.MaxLength); err != nil {
+			return nil, err
+		}
 		styleBytes, e := readMeasurementBytes(reader)
 		if e != nil {
 			return nil, e
@@ -88,6 +141,13 @@ func UnmarshalMeasurementRequests(data []byte) ([]MeasurementRequest, error) {
 		return nil, fmt.Errorf("measurement protocol: trailing request bytes")
 	}
 	return requests, nil
+}
+func writeMeasurementBool(out *bytes.Buffer, value bool) {
+	if value {
+		out.WriteByte(1)
+	} else {
+		out.WriteByte(0)
+	}
 }
 
 func MarshalMeasurementResults(results []MeasurementResult) ([]byte, error) {
