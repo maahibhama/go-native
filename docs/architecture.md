@@ -1,5 +1,10 @@
 # Architecture
 
+> This document records the original narrow proof and its design rationale. For
+> the current repository structure and production render path, start with the
+> [code tour](code-tour.md). Live source and tests take precedence over milestone
+> descriptions below here.
+
 Go Native's first milestone proves a narrow claim: a Go-owned declarative tree can drive genuine UIKit controls through one batched native boundary, and a native button event can update a label through state, rebuilding, and reconciliation.
 
 ## Milestone 0 data flow

@@ -1,4 +1,3 @@
-// Package ui defines the platform-independent declarative UI tree.
 package ui
 
 import (

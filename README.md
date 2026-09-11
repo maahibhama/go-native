@@ -2,6 +2,8 @@
 
 A declarative Go UI framework that compiles and renders genuine platform-native controls on iOS (UIKit) and Android (Android Views) with zero WebView, JavaScript, React Native bridge JSON, Flutter, or Skia canvas overhead.
 
+> New to the repository? Read the [code tour](docs/code-tour.md) first. It explains the render path, ownership boundaries, and where each kind of change belongs.
+
 ---
 
 ## Key Highlights
@@ -112,22 +114,19 @@ import (
 )
 
 func App() ui.Component {
-	count := ui.UseState(0)
-
-	return ui.SafeArea(
-		ui.Column(
-			ui.Text("Go Native").FontSize(32).Bold(),
-			ui.Text(fmt.Sprintf("Current count: %d", count.Get())).FontSize(18),
-			ui.Row(
-				ui.Button("Decrement").OnClick(func() {
-					count.Set(count.Get() - 1)
-				}),
-				ui.Button("Increment").OnClick(func() {
-					count.Set(count.Get() + 1)
-				}),
-			).Gap(16),
-		).Padding(24).Gap(16).Align(ui.AlignCenter),
-	)
+	return ui.Functional("counter", func(ctx ui.BuildContext) ui.Component {
+		count := ui.UseState(ctx, 0)
+		return ui.SafeArea(
+			ui.Column(
+				ui.Text("Go Native").FontSize(32).Bold(),
+				ui.Text(fmt.Sprintf("Current count: %d", count.Get())).FontSize(18),
+				ui.Row(
+					ui.Button("Decrement", func() { count.Update(func(v int) int { return v - 1 }) }),
+					ui.Button("Increment", func() { count.Update(func(v int) int { return v + 1 }) }),
+				).Gap(16),
+			).Padding(24).Gap(16).Align(ui.AlignCenter),
+		)
+	})
 }
 ```
 
