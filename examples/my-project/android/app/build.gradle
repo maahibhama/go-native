@@ -42,7 +42,7 @@ android {
 }
 
 dependencies {
-    implementation "androidx.recyclerview:recyclerview:1.4.0"
+    implementation files("libs/gonative-runtime.aar")
 }
 
 tasks.register("prepareGoNativeLibraries", Exec) {

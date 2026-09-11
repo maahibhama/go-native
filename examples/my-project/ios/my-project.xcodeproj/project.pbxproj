@@ -8,14 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		100000000000000000000011 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000010 /* main.m */; };
-		100000000000000000000014 /* GoNativeRenderer.m in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000013 /* GoNativeRenderer.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		100000000000000000000003 /* my-project.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "my-project.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		100000000000000000000010 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
-		100000000000000000000012 /* GoNativeRenderer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GoNativeRenderer.h; sourceTree = "<group>"; };
-		100000000000000000000013 /* GoNativeRenderer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = GoNativeRenderer.m; sourceTree = "<group>"; };
 		100000000000000000000015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -34,8 +31,6 @@
 			isa = PBXGroup;
 			children = (
 				100000000000000000000010 /* main.m */,
-				100000000000000000000012 /* GoNativeRenderer.h */,
-				100000000000000000000013 /* GoNativeRenderer.m */,
 				100000000000000000000015 /* Info.plist */,
 				100000000000000000000003 /* my-project.app */,
 			);
@@ -114,10 +109,11 @@
 			);
 			outputPaths = (
 				"$(BUILT_PRODUCTS_DIR)/libcounter.a",
+				"$(BUILT_PRODUCTS_DIR)/libGoNativeKit.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin:$HOME/go/bin\"\nexport GOCACHE=\"${SRCROOT}/../build/gocache\"\n\nif [ \"$PLATFORM_NAME\" = \"iphonesimulator\" ]; then\n    SDK_PATH=$(xcrun --sdk iphonesimulator --show-sdk-path)\n    export GOOS=ios\n    export GOARCH=arm64\n    export CGO_ENABLED=1\n    export CC=\"clang -target arm64-apple-ios15.0-simulator -isysroot $SDK_PATH\"\nelse\n    SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)\n    export GOOS=ios\n    export GOARCH=arm64\n    export CGO_ENABLED=1\n    export CC=\"clang -target arm64-apple-ios15.0 -isysroot $SDK_PATH\"\nfi\n\nmkdir -p \"${BUILT_PRODUCTS_DIR}\"\ncd \"${SRCROOT}/..\"\ngo build -buildmode=c-archive -o \"${BUILT_PRODUCTS_DIR}/libcounter.a\" ./ios/bridge\n";
+			shellScript = "export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin:$HOME/go/bin\"\nexport GOCACHE=\"${SRCROOT}/../build/gocache\"\nFRAMEWORK_ROOT=$(cd \"${SRCROOT}/..\" && go list -m -f '{{.Dir}}' github.com/go-native/go-native)\n\"$FRAMEWORK_ROOT/scripts/build-ios-framework.sh\" >/dev/null\n\nif [ \"$PLATFORM_NAME\" = \"iphonesimulator\" ]; then\n    SDK_PATH=$(xcrun --sdk iphonesimulator --show-sdk-path)\n    SLICE=ios-arm64-simulator\n    export GOOS=ios\n    export GOARCH=arm64\n    export CGO_ENABLED=1\n    export CC=\"clang -target arm64-apple-ios15.0-simulator -isysroot $SDK_PATH\"\nelse\n    SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)\n    SLICE=ios-arm64\n    export GOOS=ios\n    export GOARCH=arm64\n    export CGO_ENABLED=1\n    export CC=\"clang -target arm64-apple-ios15.0 -isysroot $SDK_PATH\"\nfi\n\nmkdir -p \"${BUILT_PRODUCTS_DIR}/GoNativeKitHeaders\"\ncp \"$FRAMEWORK_ROOT/build/native/GoNativeKit.xcframework/$SLICE/libGoNativeKit.a\" \"${BUILT_PRODUCTS_DIR}/libGoNativeKit.a\"\ncp -R \"$FRAMEWORK_ROOT/build/native/GoNativeKit.xcframework/$SLICE/Headers/.\" \"${BUILT_PRODUCTS_DIR}/GoNativeKitHeaders/\"\ncd \"${SRCROOT}/..\"\ngo build -buildmode=c-archive -o \"${BUILT_PRODUCTS_DIR}/libcounter.a\" ./ios/bridge\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -127,7 +123,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				100000000000000000000011 /* main.m in Sources */,
-				100000000000000000000014 /* GoNativeRenderer.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -191,7 +186,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(BUILT_PRODUCTS_DIR)",
-					"$(SRCROOT)",
+					"$(BUILT_PRODUCTS_DIR)/GoNativeKitHeaders",
 				);
 				INFOPLIST_FILE = Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -206,6 +201,7 @@
 				MARKETING_VERSION = 0.1;
 				OTHER_LDFLAGS = (
 					"-lcounter",
+					"-lGoNativeKit",
 					"-framework",
 					"UIKit",
 					"-framework",
@@ -229,7 +225,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(BUILT_PRODUCTS_DIR)",
-					"$(SRCROOT)",
+					"$(BUILT_PRODUCTS_DIR)/GoNativeKitHeaders",
 				);
 				INFOPLIST_FILE = Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -244,6 +240,7 @@
 				MARKETING_VERSION = 0.1;
 				OTHER_LDFLAGS = (
 					"-lcounter",
+					"-lGoNativeKit",
 					"-framework",
 					"UIKit",
 					"-framework",

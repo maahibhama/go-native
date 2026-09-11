@@ -50,8 +50,6 @@ func TestInitCreatesCompleteNativeScaffold(t *testing.T) {
 		"ios/hello-native.xcodeproj/project.pbxproj",
 		"ios/hello-native.xcodeproj/xcshareddata/xcschemes/hello-native.xcscheme",
 		"ios/main.m",
-		"ios/GoNativeRenderer.h",
-		"ios/GoNativeRenderer.m",
 		"ios/Info.plist",
 		"ios/bridge/main.go",
 		// Android & Android Studio
@@ -63,7 +61,6 @@ func TestInitCreatesCompleteNativeScaffold(t *testing.T) {
 		"android/app/src/main/AndroidManifest.xml",
 		"android/app/src/main/res/values/styles.xml",
 		"android/app/src/main/java/dev/gonative/hello_native/MainActivity.java",
-		"android/app/src/main/java/dev/gonative/hello_native/GapDrawable.java",
 		"android/bridge/main.go",
 		"android/bridge/jni.c",
 		"android/bridge/stub.go",
@@ -104,8 +101,15 @@ func TestInitCreatesCompleteNativeScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(jni), "Java_dev_gonative_hello_1native_MainActivity_nativeStart") {
+	if !strings.Contains(string(jni), "Java_dev_gonative_runtime_GoNativeActivity_nativeStart") {
 		t.Fatalf("unexpected jni.c:\n%s", jni)
+	}
+	launcher, err := os.ReadFile(filepath.Join(destination, "android", "app", "src", "main", "java", "dev", "gonative", "hello_native", "MainActivity.java"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(launcher), "extends GoNativeActivity") {
+		t.Fatalf("Android launcher contains framework implementation:\n%s", launcher)
 	}
 
 	if !strings.Contains(out.String(), "Created ") {
@@ -260,7 +264,7 @@ func TestAndroidGradleProjectReferencesSharedNativeLibraries(t *testing.T) {
 		t.Fatal(err)
 	}
 	contents := string(buildFile)
-	for _, want := range []string{"prepareGoNativeLibraries", "build/android/lib", "arm64-v8a,x86_64", "../AndroidManifest.xml", "androidx.recyclerview:recyclerview"} {
+	for _, want := range []string{"prepareGoNativeLibraries", "build/android/lib", "arm64-v8a,x86_64", "../AndroidManifest.xml", "implementation project(\":runtime\")"} {
 		if !strings.Contains(contents, want) {
 			t.Errorf("Gradle configuration missing %q", want)
 		}

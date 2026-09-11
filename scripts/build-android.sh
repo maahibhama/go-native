@@ -22,7 +22,7 @@ mkdir -p "$CLASSES" "$BUILD/compiled-res" "$STATE"
 cd "$ROOT"
 "$ROOT/scripts/build-android-libs.sh"
 
-find "$ROOT/platform/android/src" -name '*.java' -print > "$BUILD/java-sources.txt"
+find "$ROOT/platform/android/src" "$ROOT/platform/android/runtime/src/main/java" -name '*.java' -print > "$BUILD/java-sources.txt"
 javac -source 8 -target 8 -bootclasspath "$ANDROID_JAR" -d "$CLASSES" @"$BUILD/java-sources.txt"
 "$TOOLS/d8" --lib "$ANDROID_JAR" --min-api 23 --output "$BUILD" $(find "$CLASSES" -name '*.class' -print)
 "$TOOLS/aapt2" compile --dir "$ROOT/platform/android/res" -o "$BUILD/compiled-res"

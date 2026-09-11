@@ -30,7 +30,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
 }
 
 JNIEXPORT void JNICALL
-Java_dev_gonative_my_1project_MainActivity_nativeStart(JNIEnv *env, jobject renderer) {
+Java_dev_gonative_runtime_GoNativeActivity_nativeStart(JNIEnv *env, jobject renderer) {
     pthread_mutex_lock(&gn_renderer_mu);
     if (gn_renderer) {
         (*env)->DeleteGlobalRef(env, gn_renderer);
@@ -45,35 +45,35 @@ Java_dev_gonative_my_1project_MainActivity_nativeStart(JNIEnv *env, jobject rend
 }
 
 JNIEXPORT void JNICALL
-Java_dev_gonative_my_1project_MainActivity_nativeSetLifecycle(JNIEnv *env, jobject renderer, jint state) {
+Java_dev_gonative_runtime_GoNativeActivity_nativeSetLifecycle(JNIEnv *env, jobject renderer, jint state) {
     (void)env;
     (void)renderer;
     if (state >= 0 && state <= 6) GoNativeAndroidSetLifecycle((uint8_t)state);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_gonative_my_1project_MainActivity_nativeDispatchFocus(JNIEnv *env, jobject renderer, jlong nodeID, jboolean focused) {
+Java_dev_gonative_runtime_GoNativeActivity_nativeDispatchFocus(JNIEnv *env, jobject renderer, jlong nodeID, jboolean focused) {
     (void)env;
     (void)renderer;
     GoNativeAndroidDispatchFocus((uint64_t)nodeID, focused ? 1 : 0);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_gonative_my_1project_MainActivity_nativeUpdateViewport(JNIEnv *env, jobject renderer, jfloat width, jfloat height, jfloat scale) {
+Java_dev_gonative_runtime_GoNativeActivity_nativeUpdateViewport(JNIEnv *env, jobject renderer, jfloat width, jfloat height, jfloat scale) {
     (void)env;
     (void)renderer;
     GoNativeAndroidUpdateViewport((float)width, (float)height, (float)scale);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_gonative_my_1project_MainActivity_nativeDispatchEvent(JNIEnv *env, jobject renderer, jlong handler) {
+Java_dev_gonative_runtime_GoNativeActivity_nativeDispatchEvent(JNIEnv *env, jobject renderer, jlong handler) {
     (void)env;
     (void)renderer;
     GoNativeAndroidDispatchEvent((uint64_t)handler);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_gonative_my_1project_MainActivity_nativeDispatchValueEvent(JNIEnv *env, jobject renderer, jlong handler, jstring value) {
+Java_dev_gonative_runtime_GoNativeActivity_nativeDispatchValueEvent(JNIEnv *env, jobject renderer, jlong handler, jstring value) {
     (void)renderer;
     const char *utf8 = value ? (*env)->GetStringUTFChars(env, value, NULL) : "";
     if (utf8) { GoNativeAndroidDispatchValueEvent((uint64_t)handler, utf8); }
@@ -81,26 +81,26 @@ Java_dev_gonative_my_1project_MainActivity_nativeDispatchValueEvent(JNIEnv *env,
 }
 
 JNIEXPORT void JNICALL
-Java_dev_gonative_my_1project_MainActivity_nativeDispatchBoolEvent(JNIEnv *env, jobject renderer, jlong handler, jboolean value) {
+Java_dev_gonative_runtime_GoNativeActivity_nativeDispatchBoolEvent(JNIEnv *env, jobject renderer, jlong handler, jboolean value) {
     (void)env; (void)renderer; GoNativeAndroidDispatchBoolEvent((uint64_t)handler, value ? 1 : 0);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_gonative_my_1project_MainActivity_nativeDispatchGestureEvent(JNIEnv *env, jobject renderer, jlong handler, jfloat translationX, jfloat translationY, jfloat velocityX, jfloat velocityY) {
+Java_dev_gonative_runtime_GoNativeActivity_nativeDispatchGestureEvent(JNIEnv *env, jobject renderer, jlong handler, jfloat translationX, jfloat translationY, jfloat velocityX, jfloat velocityY) {
     (void)env;
     (void)renderer;
     GoNativeAndroidDispatchGestureEvent((uint64_t)handler, (float)translationX, (float)translationY, (float)velocityX, (float)velocityY);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_gonative_my_1project_MainActivity_nativeDispatchSelectionEvent(JNIEnv *env, jobject renderer, jlong handler, jint start, jint end) {
+Java_dev_gonative_runtime_GoNativeActivity_nativeDispatchSelectionEvent(JNIEnv *env, jobject renderer, jlong handler, jint start, jint end) {
     (void)env;
     (void)renderer;
     GoNativeAndroidDispatchSelectionEvent((uint64_t)handler, (int32_t)start, (int32_t)end);
 }
 
 JNIEXPORT void JNICALL
-Java_dev_gonative_my_1project_MainActivity_nativeStop(JNIEnv *env, jobject renderer) {
+Java_dev_gonative_runtime_GoNativeActivity_nativeStop(JNIEnv *env, jobject renderer) {
     (void)renderer;
     GoNativeAndroidStop();
     pthread_mutex_lock(&gn_renderer_mu);
@@ -158,7 +158,7 @@ int32_t GNAndroidMeasureBatch(const uint8_t *bytes, int32_t length, uint8_t **re
 void GNAndroidFreeBuffer(uint8_t *bytes) { free(bytes); }
 
 JNIEXPORT void JNICALL
-Java_dev_gonative_my_1project_MainActivity_nativeReportBatchApplied(JNIEnv *env, jobject renderer, jlong sequence, jlong nativeNanos) {
+Java_dev_gonative_runtime_GoNativeActivity_nativeReportBatchApplied(JNIEnv *env, jobject renderer, jlong sequence, jlong nativeNanos) {
     (void)env;
     (void)renderer;
     GoNativeAndroidReportBatchApplied((uint64_t)sequence, (uint64_t)nativeNanos);

@@ -1,6 +1,4 @@
-plugins {
-    id "com.android.application"
-}
+apply plugin: "com.android.application"
 
 def repositoryRoot = rootProject.projectDir.toPath().resolve("../..").normalize().toFile()
 def selectedAbis = (System.getenv("GONATIVE_ANDROID_ABIS") ?: "arm64-v8a,x86_64").split(",")
@@ -29,7 +27,7 @@ android {
 }
 
 dependencies {
-    implementation "androidx.recyclerview:recyclerview:1.4.0"
+    implementation project(":runtime")
 }
 
 tasks.register("prepareGoNativeLibraries", Exec) {

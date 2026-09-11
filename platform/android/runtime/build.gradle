@@ -1,0 +1,38 @@
+apply plugin: "com.android.library"
+
+android {
+    namespace "dev.gonative.runtime"
+    compileSdk 35
+
+    defaultConfig {
+        minSdk 23
+        consumerProguardFiles "consumer-rules.pro"
+    }
+}
+
+dependencies {
+    implementation "androidx.recyclerview:recyclerview:1.4.0"
+}
+
+// Annotation extraction is not used by the runtime API and otherwise downloads
+// the lint Gradle plugin even for an offline local artifact build.
+tasks.configureEach { task ->
+    if (task.name.startsWith("extract") && task.name.endsWith("Annotations")) {
+        task.enabled = false
+    }
+}
+
+["Debug", "Release"].each { buildType ->
+    String variant = buildType.toLowerCase()
+    def prepareTypeDefs = tasks.register("prepare${buildType}TypeDefs") {
+        outputs.file(layout.buildDirectory.file("intermediates/annotations_typedef_file/${variant}/extract${buildType}Annotations/typedefs.txt"))
+        doLast {
+            File typedefs = outputs.files.singleFile
+            typedefs.parentFile.mkdirs()
+            typedefs.text = ""
+        }
+    }
+    tasks.matching { it.name == "sync${buildType}LibJars" }.configureEach {
+        dependsOn(prepareTypeDefs)
+    }
+}

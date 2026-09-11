@@ -190,6 +190,14 @@ func runStandalonePlatformCommand(root, action, platform string, runner commandR
 
 	switch {
 	case action == "build" && platform == "ios":
+		frameworkRoot, err := findFrameworkRoot()
+		if err != nil {
+			return fmt.Errorf("resolve Go Native iOS framework: %w", err)
+		}
+		frameworkScript := filepath.Join(frameworkRoot, "scripts", "build-ios-framework.sh")
+		if err = runner.Run(frameworkScript, nil, frameworkRoot, env, stdout, stderr); err != nil {
+			return fmt.Errorf("build GoNativeKit: %w", err)
+		}
 		sdkOut, err := exec.Command("xcrun", "--sdk", "iphonesimulator", "--show-sdk-path").Output()
 		if err != nil {
 			return fmt.Errorf("lookup iOS simulator SDK: %w", err)
@@ -214,9 +222,9 @@ func runStandalonePlatformCommand(root, action, platform string, runner commandR
 			"-framework", "Foundation",
 			"-framework", "CoreGraphics",
 			"-I" + buildDir,
-			"-I" + filepath.Join(root, "ios"),
+			"-I" + filepath.Join(frameworkRoot, "build", "native", "GoNativeKit.xcframework", "ios-arm64-simulator", "Headers"),
 			filepath.Join(root, "ios", "main.m"),
-			filepath.Join(root, "ios", "GoNativeRenderer.m"),
+			filepath.Join(frameworkRoot, "build", "native", "GoNativeKit.xcframework", "ios-arm64-simulator", "libGoNativeKit.a"),
 			filepath.Join(buildDir, "counter.a"),
 			"-o", filepath.Join(appBundle, appName),
 		}
@@ -248,10 +256,28 @@ func runStandalonePlatformCommand(root, action, platform string, runner commandR
 		return nil
 
 	case action == "build" && platform == "android":
+		frameworkRoot, err := findFrameworkRoot()
+		if err != nil {
+			return fmt.Errorf("resolve Go Native Android runtime: %w", err)
+		}
+		frameworkScript := filepath.Join(frameworkRoot, "scripts", "build-android-runtime.sh")
+		if err = runner.Run(frameworkScript, nil, frameworkRoot, env, stdout, stderr); err != nil {
+			return fmt.Errorf("build gonative-runtime AAR: %w", err)
+		}
+		appLibs := filepath.Join(root, "android", "app", "libs")
+		if err = os.MkdirAll(appLibs, 0o755); err != nil {
+			return fmt.Errorf("create Android app libraries: %w", err)
+		}
+		if err = copyFile(filepath.Join(frameworkRoot, "build", "native", "gonative-runtime.aar"), filepath.Join(appLibs, "gonative-runtime.aar")); err != nil {
+			return fmt.Errorf("install gonative-runtime AAR: %w", err)
+		}
 		if err := buildStandaloneAndroidLibs(root, env, runner, stdout, stderr); err != nil {
 			return err
 		}
 		gradlew := filepath.Join(root, "android", "gradlew")
+		if configuredGradle := os.Getenv("GONATIVE_GRADLE"); configuredGradle != "" {
+			gradlew = configuredGradle
+		}
 		if _, err := os.Stat(gradlew); err == nil {
 			return runner.Run(gradlew, []string{"-p", "android", "assembleDebug", "--no-daemon"}, root, env, stdout, stderr)
 		}

@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "GoNativeCounter"
 include(":app")
+include(":runtime")

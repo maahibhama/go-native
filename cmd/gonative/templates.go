@@ -36,14 +36,11 @@ func generatePbxproj(name, pkg string) string {
 
 /* Begin PBXBuildFile section */
 		100000000000000000000011 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000010 /* main.m */; };
-		100000000000000000000014 /* GoNativeRenderer.m in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000013 /* GoNativeRenderer.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		100000000000000000000003 /* %s.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "%s.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		100000000000000000000010 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
-		100000000000000000000012 /* GoNativeRenderer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GoNativeRenderer.h; sourceTree = "<group>"; };
-		100000000000000000000013 /* GoNativeRenderer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = GoNativeRenderer.m; sourceTree = "<group>"; };
 		100000000000000000000015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -62,8 +59,6 @@ func generatePbxproj(name, pkg string) string {
 			isa = PBXGroup;
 			children = (
 				100000000000000000000010 /* main.m */,
-				100000000000000000000012 /* GoNativeRenderer.h */,
-				100000000000000000000013 /* GoNativeRenderer.m */,
 				100000000000000000000015 /* Info.plist */,
 				100000000000000000000003 /* %s.app */,
 			);
@@ -142,10 +137,11 @@ func generatePbxproj(name, pkg string) string {
 			);
 			outputPaths = (
 				"$(BUILT_PRODUCTS_DIR)/libcounter.a",
+				"$(BUILT_PRODUCTS_DIR)/libGoNativeKit.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin:$HOME/go/bin\"\nexport GOCACHE=\"${SRCROOT}/../build/gocache\"\n\nif [ \"$PLATFORM_NAME\" = \"iphonesimulator\" ]; then\n    SDK_PATH=$(xcrun --sdk iphonesimulator --show-sdk-path)\n    export GOOS=ios\n    export GOARCH=arm64\n    export CGO_ENABLED=1\n    export CC=\"clang -target arm64-apple-ios15.0-simulator -isysroot $SDK_PATH\"\nelse\n    SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)\n    export GOOS=ios\n    export GOARCH=arm64\n    export CGO_ENABLED=1\n    export CC=\"clang -target arm64-apple-ios15.0 -isysroot $SDK_PATH\"\nfi\n\nmkdir -p \"${BUILT_PRODUCTS_DIR}\"\ncd \"${SRCROOT}/..\"\ngo build -buildmode=c-archive -o \"${BUILT_PRODUCTS_DIR}/libcounter.a\" ./ios/bridge\n";
+			shellScript = "export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin:$HOME/go/bin\"\nexport GOCACHE=\"${SRCROOT}/../build/gocache\"\nFRAMEWORK_ROOT=$(cd \"${SRCROOT}/..\" && go list -m -f '{{.Dir}}' github.com/go-native/go-native)\n\"$FRAMEWORK_ROOT/scripts/build-ios-framework.sh\" >/dev/null\n\nif [ \"$PLATFORM_NAME\" = \"iphonesimulator\" ]; then\n    SDK_PATH=$(xcrun --sdk iphonesimulator --show-sdk-path)\n    SLICE=ios-arm64-simulator\n    export GOOS=ios\n    export GOARCH=arm64\n    export CGO_ENABLED=1\n    export CC=\"clang -target arm64-apple-ios15.0-simulator -isysroot $SDK_PATH\"\nelse\n    SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)\n    SLICE=ios-arm64\n    export GOOS=ios\n    export GOARCH=arm64\n    export CGO_ENABLED=1\n    export CC=\"clang -target arm64-apple-ios15.0 -isysroot $SDK_PATH\"\nfi\n\nmkdir -p \"${BUILT_PRODUCTS_DIR}/GoNativeKitHeaders\"\ncp \"$FRAMEWORK_ROOT/build/native/GoNativeKit.xcframework/$SLICE/libGoNativeKit.a\" \"${BUILT_PRODUCTS_DIR}/libGoNativeKit.a\"\ncp -R \"$FRAMEWORK_ROOT/build/native/GoNativeKit.xcframework/$SLICE/Headers/.\" \"${BUILT_PRODUCTS_DIR}/GoNativeKitHeaders/\"\ncd \"${SRCROOT}/..\"\ngo build -buildmode=c-archive -o \"${BUILT_PRODUCTS_DIR}/libcounter.a\" ./ios/bridge\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -155,7 +151,6 @@ func generatePbxproj(name, pkg string) string {
 			buildActionMask = 2147483647;
 			files = (
 				100000000000000000000011 /* main.m in Sources */,
-				100000000000000000000014 /* GoNativeRenderer.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -219,7 +214,7 @@ func generatePbxproj(name, pkg string) string {
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(BUILT_PRODUCTS_DIR)",
-					"$(SRCROOT)",
+					"$(BUILT_PRODUCTS_DIR)/GoNativeKitHeaders",
 				);
 				INFOPLIST_FILE = Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -234,6 +229,7 @@ func generatePbxproj(name, pkg string) string {
 				MARKETING_VERSION = 0.1;
 				OTHER_LDFLAGS = (
 					"-lcounter",
+					"-lGoNativeKit",
 					"-framework",
 					"UIKit",
 					"-framework",
@@ -257,7 +253,7 @@ func generatePbxproj(name, pkg string) string {
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(BUILT_PRODUCTS_DIR)",
-					"$(SRCROOT)",
+					"$(BUILT_PRODUCTS_DIR)/GoNativeKitHeaders",
 				);
 				INFOPLIST_FILE = Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -272,6 +268,7 @@ func generatePbxproj(name, pkg string) string {
 				MARKETING_VERSION = 0.1;
 				OTHER_LDFLAGS = (
 					"-lcounter",
+					"-lGoNativeKit",
 					"-framework",
 					"UIKit",
 					"-framework",
@@ -401,7 +398,7 @@ func getProjectTemplates(name string) map[string]string {
 	pkg := sanitizePackageName(name)
 	jniPkg := sanitizeJniName(pkg)
 
-	return map[string]string{
+	templates := map[string]string{
 		"go.mod": fmt.Sprintf("module %s\n\ngo 1.24\n\nrequire github.com/go-native/go-native v0.0.0\n", name),
 		"app.go": `// Package app contains the application's declarative native UI.
 package app
@@ -418,7 +415,7 @@ func App() ui.Component {
 	)
 }
 `,
-		".gitignore": "build/\n.gonative/\n.gradle/\n*.app\n*.apk\n*.idsig\nDerivedData/\n",
+		".gitignore": "build/\n.gonative/\n.gradle/\n*.app\n*.apk\n*.idsig\nDerivedData/\nandroid/app/libs/*.aar\n",
 		"README.md": fmt.Sprintf(`# %s
 
 A Go Native application. The UI is declared in app.go and renders genuine platform-native controls on iOS and Android.
@@ -887,6 +884,13 @@ func GoNativeDispatchValueEvent(handler C.uint64_t, value *C.char) {
 	}
 }
 
+//export GoNativeDispatchSelection
+func GoNativeDispatchSelection(handler C.uint64_t, start, end C.int32_t) {
+	if appRuntime != nil {
+		appRuntime.DispatchSelection(ui.HandlerID(handler), int32(start), int32(end))
+	}
+}
+
 //export GoNativeDispatchBoolEvent
 func GoNativeDispatchBoolEvent(handler C.uint64_t, value C.uint8_t) {
 	if appRuntime != nil {
@@ -1154,6 +1158,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
@@ -1254,7 +1259,16 @@ public final class MainActivity extends Activity {
         nativeStart();
         nativeSetLifecycle(0);
         View content = findViewById(android.R.id.content);
+        content.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override public WindowInsets onApplyWindowInsets(View view, WindowInsets insets) {
+                view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                        insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+                reportViewport(view);
+                return insets;
+            }
+        });
         content.addOnLayoutChangeListener(viewportListener);
+        content.requestApplyInsets();
         content.post(new Runnable() { @Override public void run() { reportViewport(findViewById(android.R.id.content)); } });
     }
 
@@ -1281,7 +1295,8 @@ public final class MainActivity extends Activity {
     private void reportViewport(View content) {
         if (content == null || content.getWidth() <= 0 || content.getHeight() <= 0) return;
         float scale = getResources().getDisplayMetrics().density;
-        float width = content.getWidth() / scale, height = content.getHeight() / scale;
+        float width = (content.getWidth() - content.getPaddingLeft() - content.getPaddingRight()) / scale;
+        float height = (content.getHeight() - content.getPaddingTop() - content.getPaddingBottom()) / scale;
         if (width == lastViewportWidth && height == lastViewportHeight && scale == lastViewportScale) return;
         lastViewportWidth = width; lastViewportHeight = height; lastViewportScale = scale;
         nativeUpdateViewport(width, height, scale);
@@ -2479,4 +2494,28 @@ package main
 func main() {}
 `,
 	}
+
+	// Native rendering is supplied by GoNativeKit and gonative-runtime. Generated
+	// applications only own launchers and their application-specific Go bridge.
+	delete(templates, "ios/GoNativeRenderer.h")
+	delete(templates, "ios/GoNativeRenderer.m")
+	delete(templates, fmt.Sprintf("android/app/src/main/java/dev/gonative/%s/GapDrawable.java", pkg))
+	templates[fmt.Sprintf("android/app/src/main/java/dev/gonative/%s/MainActivity.java", pkg)] = fmt.Sprintf(`package dev.gonative.%s;
+
+import dev.gonative.runtime.GoNativeActivity;
+
+/** Application launcher. Rendering is supplied by gonative-runtime. */
+public final class MainActivity extends GoNativeActivity {}
+`, pkg)
+	templates["android/app/build.gradle"] = strings.Replace(
+		templates["android/app/build.gradle"],
+		`implementation "androidx.recyclerview:recyclerview:1.4.0"`,
+		`implementation files("libs/gonative-runtime.aar")`,
+		1,
+	)
+	oldJNI := "Java_dev_gonative_" + jniPkg + "_MainActivity_"
+	templates["android/bridge/jni.c"] = strings.ReplaceAll(
+		templates["android/bridge/jni.c"], oldJNI, "Java_dev_gonative_runtime_GoNativeActivity_",
+	)
+	return templates
 }

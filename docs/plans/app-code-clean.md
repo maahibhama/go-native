@@ -14,10 +14,12 @@ Branch: `feat/v1/app_code_clean`
 - [x] Extract iOS native measurement into `GNMeasurementHost`.
 - [ ] Split iOS control creation and styling.
 - [x] Extract Android bounded protocol reading into an app-neutral runtime package.
-- [ ] Split Android registry, controls, measurement, and runtime host.
+- [x] Move Android renderer ownership behind the app-neutral `GoNativeActivity` runtime surface.
+- [ ] Split Android registry, controls, measurement, and runtime host internally.
 - [x] Build a reproducible `GoNativeKit.xcframework` with device and simulator slices.
-- [ ] Build and consume the Android AAR artifact.
-- [ ] Reduce generated projects and regenerate `examples/my-project`.
+- [x] Build `gonative-runtime.aar` and consume the runtime module from the framework fixture.
+- [x] Consume the packaged AAR from generated standalone applications.
+- [x] Reduce generated projects and regenerate `examples/my-project` as a thin consumer.
 
 ## Outcome
 

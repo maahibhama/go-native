@@ -54,7 +54,7 @@ func TestExtractedAndroidModulesRemainFrameworkOwned(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	frameworkPath := filepath.Join(root, "platform", "android", "src", "dev", "gonative", "runtime", "ProtocolReader.java")
+	frameworkPath := filepath.Join(root, "platform", "android", "runtime", "src", "main", "java", "dev", "gonative", "runtime", "ProtocolReader.java")
 	if _, err := os.Stat(frameworkPath); err != nil {
 		t.Fatalf("framework-owned Android source missing: %v", err)
 	}
