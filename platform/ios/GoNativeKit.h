@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 
+#import "GNControls.h"
 #import "GNMeasurementHost.h"
 #import "GNProtocolReader.h"
 #import "GNViewRegistry.h"

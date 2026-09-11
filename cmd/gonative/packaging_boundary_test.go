@@ -23,6 +23,8 @@ func TestExtractedIOSModulesRemainFrameworkOwned(t *testing.T) {
 		"GNRuntimeHost.m",
 		"GNMeasurementHost.h",
 		"GNMeasurementHost.m",
+		"GNControls.h",
+		"GNControls.m",
 	}
 	templates := getProjectTemplates("ownership-check")
 
@@ -54,21 +56,36 @@ func TestExtractedAndroidModulesRemainFrameworkOwned(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	frameworkPath := filepath.Join(root, "platform", "android", "runtime", "src", "main", "java", "dev", "gonative", "runtime", "ProtocolReader.java")
-	if _, err := os.Stat(frameworkPath); err != nil {
-		t.Fatalf("framework-owned Android source missing: %v", err)
+	modules := []string{
+		"ProtocolReader.java",
+		"ViewRegistry.java",
+		"NativeMeasurer.java",
+		"ControlFactory.java",
+		"GestureBinding.java",
+		"EventDispatcher.java",
 	}
 
-	for generatedPath := range getProjectTemplates("ownership-check") {
-		if filepath.Base(generatedPath) == "ProtocolReader.java" {
-			t.Fatalf("framework-owned Android reader must not be copied by gonative init: %s", generatedPath)
-		}
-	}
+	templates := getProjectTemplates("ownership-check")
 
-	fixturePath := filepath.Join(root, "examples", "my-project", "android", "app", "src", "main", "java", "dev", "gonative", "runtime", "ProtocolReader.java")
-	if _, err := os.Stat(fixturePath); err == nil {
-		t.Fatalf("framework-owned Android source was copied into generated fixture: %s", fixturePath)
-	} else if !os.IsNotExist(err) {
-		t.Fatalf("inspect generated fixture: %v", err)
+	for _, name := range modules {
+		t.Run(name, func(t *testing.T) {
+			frameworkPath := filepath.Join(root, "platform", "android", "runtime", "src", "main", "java", "dev", "gonative", "runtime", name)
+			if _, err := os.Stat(frameworkPath); err != nil {
+				t.Fatalf("framework-owned Android source missing: %v", err)
+			}
+
+			for generatedPath := range templates {
+				if filepath.Base(generatedPath) == name {
+					t.Fatalf("framework-owned Android module %q must not be copied by gonative init: %s", name, generatedPath)
+				}
+			}
+
+			fixturePath := filepath.Join(root, "examples", "my-project", "android", "app", "src", "main", "java", "dev", "gonative", "runtime", name)
+			if _, err := os.Stat(fixturePath); err == nil {
+				t.Fatalf("framework-owned Android source was copied into generated fixture: %s", fixturePath)
+			} else if !os.IsNotExist(err) {
+				t.Fatalf("inspect generated fixture: %v", err)
+			}
+		})
 	}
 }

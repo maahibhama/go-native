@@ -5,12 +5,12 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BUILD=${GONATIVE_ARTIFACT_DIR:-"$ROOT/build/native"}
 WORK="$BUILD/ios-framework"
 OUTPUT="$BUILD/GoNativeKit.xcframework"
-SOURCES="GNProtocolReader.m GNViewRegistry.m GNRuntimeHost.m GNMeasurementHost.m GoNativeRenderer.m"
+SOURCES="GNProtocolReader.m GNViewRegistry.m GNRuntimeHost.m GNMeasurementHost.m GNControls.m GoNativeRenderer.m"
 
 rm -rf "$WORK" "$OUTPUT"
 mkdir -p "$WORK/device/Headers" "$WORK/simulator/Headers"
 
-for header in GoNativeKit.h GoNativeRenderer.h GNMeasurementHost.h GNProtocolReader.h GNViewRegistry.h module.modulemap; do
+for header in GoNativeKit.h GoNativeRenderer.h GNControls.h GNMeasurementHost.h GNProtocolReader.h GNViewRegistry.h module.modulemap; do
     cp "$ROOT/platform/ios/$header" "$WORK/device/Headers/$header"
     cp "$ROOT/platform/ios/$header" "$WORK/simulator/Headers/$header"
 done

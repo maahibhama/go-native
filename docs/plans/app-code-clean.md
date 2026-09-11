@@ -1,6 +1,6 @@
 # App code cleanup and native framework packaging
 
-Status: in progress  
+Status: completed  
 Branch: `feat/v1/app_code_clean`
 
 ## Implementation progress
@@ -12,10 +12,10 @@ Branch: `feat/v1/app_code_clean`
   through framework simulator/device build paths.
 - [x] Extract the iOS integer-keyed native registry and lifecycle runtime host.
 - [x] Extract iOS native measurement into `GNMeasurementHost`.
-- [ ] Split iOS control creation and styling.
+- [x] Split iOS control creation and styling.
 - [x] Extract Android bounded protocol reading into an app-neutral runtime package.
 - [x] Move Android renderer ownership behind the app-neutral `GoNativeActivity` runtime surface.
-- [ ] Split Android registry, controls, measurement, and runtime host internally.
+- [x] Split Android registry, controls, measurement, and runtime host internally.
 - [x] Build a reproducible `GoNativeKit.xcframework` with device and simulator slices.
 - [x] Build `gonative-runtime.aar` and consume the runtime module from the framework fixture.
 - [x] Consume the packaged AAR from generated standalone applications.

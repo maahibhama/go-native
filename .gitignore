@@ -1,6 +1,33 @@
-/build/
-/.gonative/
-/platform/android/.gradle/
-/platform/android/build/
-/platform/android/app/build/
+# Build products
+build/
+.gonative/
+DerivedData/
+*.app
+*.apk
+*.aab
+*.aar
+*.idsig
+*.dSYM
+*.xcarchive
+
+# Android
+.gradle/
+local.properties
+.cxx/
+
+# Xcode / Apple
+*.xcuserdatad
+*.xcuserstate
+xcuserdata/
+
+# Go binaries & profiling
+*.test
+*.prof
+*.out
+
+# Editors & OS
 .DS_Store
+._*
+.idea/
+*.iml
+.vscode/

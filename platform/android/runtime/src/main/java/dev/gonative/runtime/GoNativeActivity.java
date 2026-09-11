@@ -1,90 +1,32 @@
 package dev.gonative.runtime;
 
-
 import android.app.Activity;
-import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Looper;
-import android.util.LongSparseArray;
-import android.util.TypedValue;
-import android.view.Gravity;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
-import android.view.accessibility.AccessibilityEvent;
-import android.view.accessibility.AccessibilityNodeInfo;
-import android.widget.Button;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-import android.widget.EditText;
-import android.widget.Switch;
-import android.widget.ProgressBar;
-import android.widget.CompoundButton;
-import android.widget.ImageView;
-import android.widget.ScrollView;
 import android.widget.HorizontalScrollView;
-import android.text.Editable;
-import android.text.InputFilter;
-import android.text.InputType;
-import android.text.SpannableStringBuilder;
-import android.text.Spanned;
-import android.text.TextWatcher;
-import android.text.TextUtils;
-import android.text.method.LinkMovementMethod;
-import android.text.method.PasswordTransformationMethod;
-import android.text.style.ClickableSpan;
-import android.text.style.ForegroundColorSpan;
-import android.text.style.StyleSpan;
-import android.text.style.UnderlineSpan;
-import android.view.inputmethod.EditorInfo;
-import android.animation.Animator;
-import android.animation.AnimatorSet;
-import android.animation.ObjectAnimator;
-import android.animation.ValueAnimator;
-import android.view.MotionEvent;
-import android.view.VelocityTracker;
-import android.view.animation.AccelerateDecelerateInterpolator;
-import android.view.animation.AccelerateInterpolator;
-import android.view.animation.DecelerateInterpolator;
-import android.view.animation.LinearInterpolator;
-import android.view.animation.OvershootInterpolator;
+import android.widget.ScrollView;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.WeakHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
-
-public class GoNativeActivity extends Activity {
+public class GoNativeActivity extends Activity implements EventDispatcher {
     private static final int CREATE = 1;
     private static final int DELETE = 2;
     private static final int UPDATE = 3;
     private static final int INSERT = 4;
     private static final int REMOVE = 5;
     private static final int MOVE = 6;
-    private static final int TEXT = 2;
-    private static final int BUTTON = 3;
-    private static final int ROW = 4;
-    private static final int COLUMN = 5;
-    private static final int SAFE_AREA = 6;
-    private static final int TEXT_INPUT = 7;
-    private static final int SWITCH = 8;
-    private static final int PROGRESS_INDICATOR = 9;
-    private static final int IMAGE = 10;
-    private static final int SCROLL_VIEW = 11;
 
     static { System.loadLibrary("gonative"); }
 
-    private final LongSparseArray<View> views = new LongSparseArray<>();
-    private final LongSparseArray<GestureBinding> gestureBindings = new LongSparseArray<>();
-    private final WeakHashMap<EditText, TextWatcher> textWatchers = new WeakHashMap<>();
-    private final WeakHashMap<EditText, Boolean> initializedInputs = new WeakHashMap<>();
-    private long rootNodeID;
+    private final ViewRegistry registry = new ViewRegistry();
+    private ControlFactory controlFactory;
+    private NativeMeasurer measurer;
     private float lastViewportWidth, lastViewportHeight, lastViewportScale;
     private final View.OnLayoutChangeListener viewportListener = new View.OnLayoutChangeListener() {
         @Override public void onLayoutChange(View view, int left, int top, int right, int bottom,
@@ -105,8 +47,19 @@ public class GoNativeActivity extends Activity {
     private native void nativeUpdateViewport(float width, float height, float scale);
     private native void nativeReportBatchApplied(long sequence, long nativeNanos);
 
+    @Override public void dispatchEvent(long handler) { nativeDispatchEvent(handler); }
+    @Override public void dispatchValueEvent(long handler, String value) { nativeDispatchValueEvent(handler, value); }
+    @Override public void dispatchBoolEvent(long handler, boolean value) { nativeDispatchBoolEvent(handler, value); }
+    @Override public void dispatchGestureEvent(long handler, float translationX, float translationY, float velocityX, float velocityY) {
+        nativeDispatchGestureEvent(handler, translationX, translationY, velocityX, velocityY);
+    }
+    @Override public void dispatchSelectionEvent(long handler, int start, int end) { nativeDispatchSelectionEvent(handler, start, end); }
+    @Override public void dispatchFocus(long nodeID, boolean focused) { nativeDispatchFocus(nodeID, focused); }
+
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        controlFactory = new ControlFactory(this, registry, this);
+        measurer = new NativeMeasurer(this, controlFactory);
         getWindow().getDecorView().setBackgroundColor(android.graphics.Color.WHITE);
         nativeStart();
         nativeSetLifecycle(0);
@@ -138,12 +91,7 @@ public class GoNativeActivity extends Activity {
         View content = findViewById(android.R.id.content);
         if (content != null) content.removeOnLayoutChangeListener(viewportListener);
         nativeStop();
-        for (int i = 0; i < gestureBindings.size(); i++) gestureBindings.valueAt(i).dispose();
-        gestureBindings.clear();
-        textWatchers.clear();
-        initializedInputs.clear();
-        for (int i = 0; i < views.size(); i++) views.valueAt(i).animate().cancel();
-        views.clear();
+        registry.clear();
         super.onDestroy();
     }
 
@@ -160,12 +108,16 @@ public class GoNativeActivity extends Activity {
     @SuppressWarnings("unused")
     public byte[] measureNativeBatch(final byte[] payload) {
         if (payload == null || payload.length == 0 || payload.length > 16777216) return null;
-        if (Looper.myLooper() == Looper.getMainLooper()) return measureNativeBatchOnUiThread(payload.clone());
+        if (measurer == null) {
+            if (controlFactory == null) controlFactory = new ControlFactory(this, registry, this);
+            measurer = new NativeMeasurer(this, controlFactory);
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) return measurer.measureNativeBatchOnUiThread(payload.clone());
         final AtomicReference<byte[]> result = new AtomicReference<>();
         final CountDownLatch ready = new CountDownLatch(1);
         runOnUiThread(new Runnable() {
             @Override public void run() {
-                try { result.set(measureNativeBatchOnUiThread(payload.clone())); }
+                try { result.set(measurer.measureNativeBatchOnUiThread(payload.clone())); }
                 finally { ready.countDown(); }
             }
         });
@@ -175,126 +127,6 @@ public class GoNativeActivity extends Activity {
             Thread.currentThread().interrupt();
             return null;
         }
-    }
-
-    private byte[] measureNativeBatchOnUiThread(byte[] payload) {
-        try {
-            ProtocolReader in = new ProtocolReader(payload);
-            if (in.remaining() < 6 || in.uint16() != 2) return null;
-            int count = in.int32();
-            if (count < 0 || count > 100000) return null;
-            ArrayList<NativeMeasurement> measured = new ArrayList<>(count);
-            for (int i = 0; i < count; i++) {
-                if (in.remaining() < 25) return null;
-                long id = in.int64();
-                int kind = in.uint8();
-                float minWidth = in.float32(), maxWidth = in.float32(), minHeight = in.float32(), maxHeight = in.float32();
-                String text = in.requiredString();
-                String imageSource = in.requiredString();
-                if (in.remaining() < 13) return null;
-                int textWrap = in.uint8(), textOverflow = in.uint8();
-                long maxLinesValue = in.uint32();
-                if (maxLinesValue > Integer.MAX_VALUE) return null;
-                int maxLines = (int) maxLinesValue;
-                boolean selectable = in.uint8() != 0;
-                int richTextLength = in.int32();
-                if (richTextLength < 0 || richTextLength > 1048576 || richTextLength > in.remaining()) return null;
-                byte[] richText = in.bytes(richTextLength);
-                String placeholder = in.requiredString();
-                if (in.remaining() < 7) return null;
-                int inputKind = in.uint8();
-                boolean secure = in.uint8() != 0, multiline = in.uint8() != 0;
-                int maxLength = in.int32();
-                if (in.remaining() < 4) return null;
-                int styleLength = in.int32();
-                if (styleLength < 0 || styleLength > 1048576 || styleLength > in.remaining()) return null;
-                byte[] typedStyle = in.bytes(styleLength);
-                measured.add(measureNativeControl(id, kind, text, imageSource, typedStyle, minWidth, maxWidth, minHeight, maxHeight, textWrap, textOverflow, maxLines, selectable, richText, placeholder, inputKind, secure, multiline, maxLength));
-            }
-            if (in.hasRemaining()) return null;
-            int capacity = 6;
-            for (NativeMeasurement item : measured) capacity += 20 + item.error.getBytes(StandardCharsets.UTF_8).length;
-            ByteBuffer out = ByteBuffer.allocate(capacity).order(ByteOrder.LITTLE_ENDIAN);
-            out.putShort((short) 2).putInt(measured.size());
-            for (NativeMeasurement item : measured) {
-                byte[] error = item.error.getBytes(StandardCharsets.UTF_8);
-                out.putLong(item.id).putFloat(item.width).putFloat(item.height).putInt(error.length).put(error);
-            }
-            return out.array();
-        } catch (Throwable error) {
-            android.util.Log.e("GoNative", "Native measurement batch failed", error);
-            return null;
-        }
-    }
-
-    private NativeMeasurement measureNativeControl(long id, int kind, String text, String imageSource, byte[] typedStyle,
-                                                    float minWidth, float maxWidth, float minHeight, float maxHeight, int textWrap,
-                                                    int textOverflow, int maxLines, boolean selectable, byte[] richText, String placeholder,
-                                                    int inputKind, boolean secure, boolean multiline, int maxLength) {
-        try {
-            View view = makeView(kind, false);
-            if (view instanceof TextView) {
-                TextView label = (TextView) view;
-                CharSequence rendered = decodeRichText(richText, 0, false);
-                label.setText(rendered == null ? text : rendered);
-                label.setIncludeFontPadding(false);
-                label.setSingleLine(textWrap == 2 || (view instanceof EditText && !multiline));
-                label.setMaxLines(maxLines > 0 ? maxLines : Integer.MAX_VALUE);
-                label.setEllipsize(textOverflow == 1 ? TextUtils.TruncateAt.START : textOverflow == 2 ? TextUtils.TruncateAt.MIDDLE : textOverflow == 3 ? TextUtils.TruncateAt.END : null);
-                if (view instanceof Button) {
-                    Button button = (Button) view;
-                    button.setAllCaps(false);
-                    button.setMinWidth(0);
-                    button.setMinimumWidth(0);
-                    button.setMinHeight(dp(44));
-                    button.setMinimumHeight(dp(44));
-                    button.setPadding(dp(16), 0, dp(16), 0);
-                }
-                if (view instanceof EditText) {
-                    EditText field = (EditText) view;
-                    field.setSingleLine(!multiline);
-                    field.setHint(placeholder);
-                    field.setInputType(resolveInputType(inputKind, 0, 0, secure, multiline));
-                    field.setTransformationMethod(secure ? PasswordTransformationMethod.getInstance() : null);
-                    field.setFilters(maxLength > 0 ? new InputFilter[]{new InputFilter.LengthFilter(maxLength)} : new InputFilter[0]);
-                    field.setMinWidth(dp(240));
-                    field.setMinimumWidth(dp(240));
-                    field.setMinHeight(dp(44));
-                    field.setMinimumHeight(dp(44));
-                    field.setPadding(dp(12), dp(8), dp(12), dp(8));
-                }
-            }
-            if (view instanceof ImageView && imageSource != null && !imageSource.isEmpty()) {
-                int resource = getResources().getIdentifier(imageSource, "drawable", getPackageName());
-                if (resource == 0) resource = getResources().getIdentifier(imageSource, "mipmap", getPackageName());
-                if (resource != 0) ((ImageView) view).setImageResource(resource);
-            }
-            applyTypedStyle(view, typedStyle);
-            int widthSpec = nativeMeasureSpec(maxWidth);
-            int heightSpec = nativeMeasureSpec(maxHeight);
-            view.measure(widthSpec, heightSpec);
-            float density = getResources().getDisplayMetrics().density;
-            float width = Math.max(finiteNonNegative(minWidth), view.getMeasuredWidth() / density);
-            float height = Math.max(finiteNonNegative(minHeight), view.getMeasuredHeight() / density);
-            if (isFinite(maxWidth) && maxWidth >= 0) width = Math.min(width, maxWidth);
-            if (isFinite(maxHeight) && maxHeight >= 0) height = Math.min(height, maxHeight);
-            return new NativeMeasurement(id, width, height, "");
-        } catch (Throwable error) {
-            return new NativeMeasurement(id, 0, 0, error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage()));
-        }
-    }
-
-    private int nativeMeasureSpec(float maximum) {
-        if (!isFinite(maximum) || maximum <= 0) return View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
-        return View.MeasureSpec.makeMeasureSpec(dp(maximum), View.MeasureSpec.AT_MOST);
-    }
-
-    private static boolean isFinite(float value) { return !Float.isNaN(value) && !Float.isInfinite(value); }
-    private static float finiteNonNegative(float value) { return isFinite(value) ? Math.max(0, value) : 0; }
-
-    private static final class NativeMeasurement {
-        final long id; final float width, height; final String error;
-        NativeMeasurement(long id, float width, float height, String error) { this.id = id; this.width = width; this.height = height; this.error = error == null ? "" : error; }
     }
 
     @SuppressWarnings("unused")
@@ -307,6 +139,7 @@ public class GoNativeActivity extends Activity {
 
     private void applyOnUiThread(byte[] payload) {
         if (payload == null) return;
+        if (controlFactory == null) controlFactory = new ControlFactory(this, registry, this);
         try {
             long started = System.nanoTime();
             ProtocolReader in = new ProtocolReader(payload);
@@ -382,38 +215,38 @@ public class GoNativeActivity extends Activity {
                 if (in.remaining() < 17) return;
                 boolean hasFrame = in.uint8() != 0;
                 float frameX = in.float32(), frameY = in.float32(), frameWidth = in.float32(), frameHeight = in.float32();
-                View view = views.get(nodeID);
+                View view = registry.getView(nodeID);
 
                 if (mutation == CREATE) {
-                    view = makeView(kind, horizontal);
+                    view = controlFactory.makeView(kind, horizontal);
                     view.setTag(nodeID);
                     final long focusNodeID = nodeID;
                     view.setOnFocusChangeListener(new View.OnFocusChangeListener() {
                         @Override public void onFocusChange(View changed, boolean hasFocus) { nativeDispatchFocus(focusNodeID, hasFocus); }
                     });
-                    views.put(nodeID, view);
-                    if (rootNodeID == 0) rootNodeID = nodeID;
-                    style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode, textWrap, textOverflow, maxLines, selectable, richText, linkHandler, placeholder, inputMode, inputKind, returnKey, capitalization, autoCorrect, secure, multiline, readOnly, validationState, errorText, selectionStart, selectionEnd, maxLength, submitHandler, selectionHandler);
-                    applyTypedStyle(view, typedStyle);
-                    applyComputedFrame(nodeID, view, hasFrame, frameX, frameY, frameWidth, frameHeight);
-                    applyInteractions(nodeID, view, interactions);
-                    if (views.size() == 1) {
+                    registry.putView(nodeID, view);
+                    if (registry.getRootNodeID() == 0) registry.setRootNodeID(nodeID);
+                    controlFactory.style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode, textWrap, textOverflow, maxLines, selectable, richText, linkHandler, placeholder, inputMode, inputKind, returnKey, capitalization, autoCorrect, secure, multiline, readOnly, validationState, errorText, selectionStart, selectionEnd, maxLength, submitHandler, selectionHandler);
+                    controlFactory.applyTypedStyle(view, typedStyle);
+                    controlFactory.applyComputedFrame(nodeID, view, hasFrame, frameX, frameY, frameWidth, frameHeight, nodeID == registry.getRootNodeID());
+                    controlFactory.applyInteractions(nodeID, view, interactions);
+                    if (registry.viewCount() == 1) {
                         view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                         view.setBackgroundColor(android.graphics.Color.WHITE);
                         setContentView(view);
                     }
                 } else if (mutation == UPDATE) {
                     if (view != null) {
-                        style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode, textWrap, textOverflow, maxLines, selectable, richText, linkHandler, placeholder, inputMode, inputKind, returnKey, capitalization, autoCorrect, secure, multiline, readOnly, validationState, errorText, selectionStart, selectionEnd, maxLength, submitHandler, selectionHandler);
-                        applyTypedStyle(view, typedStyle);
-                        applyComputedFrame(nodeID, view, hasFrame, frameX, frameY, frameWidth, frameHeight);
-                        applyInteractions(nodeID, view, interactions);
+                        controlFactory.style(view, kind, text, width, height, padding, gap, alignment, fontSize, bold, handler, changeHandler, toggleHandler, checked, progress, accessibility, hint, role, focused, scalesText, imageSource, imageMode, textWrap, textOverflow, maxLines, selectable, richText, linkHandler, placeholder, inputMode, inputKind, returnKey, capitalization, autoCorrect, secure, multiline, readOnly, validationState, errorText, selectionStart, selectionEnd, maxLength, submitHandler, selectionHandler);
+                        controlFactory.applyTypedStyle(view, typedStyle);
+                        controlFactory.applyComputedFrame(nodeID, view, hasFrame, frameX, frameY, frameWidth, frameHeight, nodeID == registry.getRootNodeID());
+                        controlFactory.applyInteractions(nodeID, view, interactions);
                     }
                 } else if (mutation == INSERT) {
-                    View parentView = views.get(parentID);
+                    View parentView = registry.getView(parentID);
                     if (parentView instanceof ViewGroup && view != null) {
                         ViewGroup parent = (ViewGroup) parentView;
-                        detach(view);
+                        ViewRegistry.detach(view);
                         if (parent instanceof ScrollView || parent instanceof HorizontalScrollView) {
                             parent.removeAllViews();
                             ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -423,12 +256,12 @@ public class GoNativeActivity extends Activity {
                         }
                     }
                 } else if (mutation == REMOVE) {
-                    detach(view);
+                    ViewRegistry.detach(view);
                 } else if (mutation == MOVE) {
-                    View parentView = views.get(parentID);
+                    View parentView = registry.getView(parentID);
                     if (parentView instanceof ViewGroup && view != null) {
                         ViewGroup parent = (ViewGroup) parentView;
-                        detach(view);
+                        ViewRegistry.detach(view);
                         if (parent instanceof ScrollView || parent instanceof HorizontalScrollView) {
                             parent.removeAllViews();
                             ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -438,499 +271,13 @@ public class GoNativeActivity extends Activity {
                         }
                     }
                 } else if (mutation == DELETE) {
-                    detach(view);
-                    if (view instanceof EditText) { textWatchers.remove((EditText) view); initializedInputs.remove((EditText) view); }
-                    GestureBinding binding = gestureBindings.get(nodeID);
-                    if (binding != null) binding.dispose();
-                    gestureBindings.remove(nodeID);
-                    if (view != null) view.animate().cancel();
-                    views.remove(nodeID);
-                    if (nodeID == rootNodeID) rootNodeID = 0;
+                    registry.deleteNode(nodeID);
                 }
-                // Retained in the cross-platform protocol for renderer diagnostics.
                 if (fromIndex == Integer.MIN_VALUE) throw new AssertionError();
             }
             nativeReportBatchApplied(sequence, System.nanoTime() - started);
         } catch (Throwable t) {
-            android.util.Log.e("GoNative", "Error applying mutation batch", t);
+            Log.e("GoNative", "Error applying mutation batch", t);
         }
     }
-
-    private void applyComputedFrame(long nodeID, View view, boolean hasFrame, float x, float y, float width, float height) {
-        if (!hasFrame || view == null || nodeID == rootNodeID) return;
-        if (!isFinite(x) || !isFinite(y) || !isFinite(width) || !isFinite(height) || width < 0 || height < 0) return;
-        int measuredWidth = dp(Math.min(width, 1000000f));
-        int measuredHeight = dp(Math.min(height, 1000000f));
-        ViewGroup.LayoutParams params = view.getLayoutParams();
-        if (params == null) params = new ViewGroup.LayoutParams(measuredWidth, measuredHeight);
-        params.width = measuredWidth;
-        params.height = measuredHeight;
-        view.setLayoutParams(params);
-        final float targetX = Math.max(-1000000f, Math.min(1000000f, x));
-        final float targetY = Math.max(-1000000f, Math.min(1000000f, y));
-        view.post(new Runnable() {
-            @Override public void run() { view.setX(dp(targetX)); view.setY(dp(targetY)); }
-        });
-    }
-
-    private View makeView(int kind, boolean horizontal) {
-        if (kind == TEXT) {
-            TextView tv = new TextView(this);
-            tv.setTextColor(android.graphics.Color.BLACK);
-            return tv;
-        }
-        if (kind == BUTTON) return new Button(this);
-        if (kind == TEXT_INPUT) return new NativeEditText();
-        if (kind == SWITCH) return new Switch(this);
-        if (kind == PROGRESS_INDICATOR) { ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); bar.setMax(10000); return bar; }
-        if (kind == IMAGE) return new ImageView(this);
-        if (kind == SCROLL_VIEW) {
-            if (horizontal) {
-                HorizontalScrollView hsv = new HorizontalScrollView(this);
-                hsv.setFillViewport(true);
-                return hsv;
-            } else {
-                ScrollView sv = new ScrollView(this);
-                sv.setFillViewport(true);
-                return sv;
-            }
-        }
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(kind == ROW ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        if (kind == SAFE_AREA) layout.setFitsSystemWindows(true);
-        return layout;
-    }
-
-    private void applyTypedStyle(View view, byte[] payload) {
-        if (view == null || payload == null || payload.length < 187) return;
-        ByteBuffer style = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
-        if (Short.toUnsignedInt(style.getShort(0)) != 1) return;
-        int portable = 2, ios = portable + typedStyleSize(style, portable, payload.length), androidStyle = ios + typedStyleSize(style, ios, payload.length);
-        if (androidStyle <= ios || androidStyle >= payload.length || typedStyleSize(style, androidStyle, payload.length) == 0) return;
-        int appearanceBase = hasTypedValues(payload, androidStyle + 112, 69) ? androidStyle + 112 : portable + 112;
-        int androidFontLength = style.getInt(androidStyle + 181);
-        int textBase = hasTypedValues(payload, androidStyle + 181, 22 + Math.max(0, androidFontLength)) ? androidStyle : portable;
-        int fontLength = style.getInt(textBase + 181), interactionBase = hasTypedValues(payload, androidStyle + 203 + Math.max(0, androidFontLength), 17) ? androidStyle : portable;
-        int background = rgba(style, appearanceBase), foreground = rgba(style, appearanceBase + 4);
-        float borderWidth = style.getFloat(appearanceBase + 8), cornerRadius = style.getFloat(appearanceBase + 16), opacity = style.getFloat(appearanceBase + 44);
-        int borderColor = rgba(style, appearanceBase + 12), visibility = Byte.toUnsignedInt(style.get(appearanceBase + 68));
-        int disabledOffset = interactionBase + 203 + style.getInt(interactionBase + 181);
-        if (fontLength < 0 || disabledOffset >= payload.length) return;
-        int fontOffset = textBase + 185 + fontLength;
-        float fontSize = style.getFloat(fontOffset), lineHeight = style.getFloat(fontOffset + 6), letterSpacing = style.getFloat(fontOffset + 10);
-        int fontWeight = Short.toUnsignedInt(style.getShort(fontOffset + 4));
-        if (view instanceof TextView) {
-            TextView text = (TextView) view;
-            String family = new String(payload, textBase + 185, fontLength, java.nio.charset.StandardCharsets.UTF_8);
-            Typeface face = family.isEmpty() ? Typeface.DEFAULT : Typeface.create(family, Typeface.NORMAL);
-            text.setTypeface(face, fontWeight >= 600 ? Typeface.BOLD : Typeface.NORMAL);
-            if (fontSize > 0) text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, fontSize);
-            if (lineHeight > 0 && android.os.Build.VERSION.SDK_INT >= 28) text.setLineHeight(dp(lineHeight));
-            if (letterSpacing != 0 && fontSize > 0) text.setLetterSpacing(letterSpacing / fontSize);
-        }
-        if (android.graphics.Color.alpha(background) > 0 || borderWidth > 0) {
-            android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
-            drawable.setColor(background);
-            if (cornerRadius > 0) drawable.setCornerRadius(dp(cornerRadius));
-            if (borderWidth > 0) drawable.setStroke(dp(borderWidth), borderColor);
-            view.setBackground(drawable);
-        }
-        if (view instanceof TextView && android.graphics.Color.alpha(foreground) > 0) ((TextView) view).setTextColor(foreground);
-        if (opacity > 0) view.setAlpha(Math.min(1f, opacity));
-        float translateX = style.getFloat(appearanceBase + 48), translateY = style.getFloat(appearanceBase + 52), scaleX = style.getFloat(appearanceBase + 56), scaleY = style.getFloat(appearanceBase + 60), rotation = style.getFloat(appearanceBase + 64);
-        view.setTranslationX(dp(translateX)); view.setTranslationY(dp(translateY));
-        view.setScaleX(scaleX == 0 ? 1 : scaleX); view.setScaleY(scaleY == 0 ? 1 : scaleY); view.setRotation(rotation);
-        float shadowBlur = style.getFloat(appearanceBase + 32), shadowOpacity = style.getFloat(appearanceBase + 40);
-        if (shadowBlur > 0 && shadowOpacity > 0) view.setElevation(dp(shadowBlur));
-        view.setVisibility(visibility == 2 ? View.GONE : visibility == 1 ? View.INVISIBLE : View.VISIBLE);
-        view.setEnabled(style.get(disabledOffset) == 0);
-    }
-
-    private int rgba(ByteBuffer style, int offset) {
-        return android.graphics.Color.argb(Byte.toUnsignedInt(style.get(offset + 3)), Byte.toUnsignedInt(style.get(offset)), Byte.toUnsignedInt(style.get(offset + 1)), Byte.toUnsignedInt(style.get(offset + 2)));
-    }
-
-    private int typedStyleSize(ByteBuffer style, int base, int limit) {
-        if (base < 0 || base + 185 > limit) return 0;
-        int fontLength = style.getInt(base + 181);
-        int size = 220 + fontLength;
-        return fontLength < 0 || base + size > limit ? 0 : size;
-    }
-
-    private boolean hasTypedValues(byte[] payload, int offset, int length) {
-        if (offset < 0 || length < 0 || offset + length > payload.length) return false;
-        for (int i = offset; i < offset + length; i++) if (payload[i] != 0) return true;
-        return false;
-    }
-
-    private void style(View view, int kind, String text, float width, float height, float padding,
-                       float gap, int alignment, float fontSize, boolean bold, long handler, long changeHandler, long toggleHandler, boolean checked, float progress,
-                       String accessibility, String hint, int role, boolean focused, boolean scalesText, String imageSource, int imageMode,
-                       int textWrap, int textOverflow, int maxLines, boolean selectable, byte[] richText, long linkHandler, String placeholder,
-                       int inputMode, int inputKind, int returnKey, int capitalization, int autoCorrect, boolean secure, boolean multiline,
-                       boolean readOnly, int validationState, String errorText, int selectionStart, int selectionEnd, int maxLength,
-                       long submitHandler, long selectionHandler) {
-        if (kind == TEXT && view instanceof TextView) {
-            TextView textView = (TextView) view;
-            CharSequence rendered = decodeRichText(richText, linkHandler, scalesText);
-            textView.setText(rendered == null ? text : rendered);
-            if (fontSize > 0) textView.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize);
-            textView.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
-            textView.setIncludeFontPadding(false);
-            textView.setTextColor(android.graphics.Color.parseColor("#111111"));
-            textView.setSingleLine(textWrap == 2);
-            textView.setHorizontallyScrolling(textWrap == 2);
-            textView.setMaxLines(maxLines > 0 ? maxLines : Integer.MAX_VALUE);
-            textView.setEllipsize(textOverflow == 1 ? TextUtils.TruncateAt.START : textOverflow == 2 ? TextUtils.TruncateAt.MIDDLE : textOverflow == 3 ? TextUtils.TruncateAt.END : null);
-            textView.setTextIsSelectable(selectable);
-            textView.setLinksClickable(linkHandler != 0);
-            textView.setMovementMethod(linkHandler != 0 ? LinkMovementMethod.getInstance() : null);
-        }
-        if (kind == BUTTON && view instanceof Button) {
-            Button btn = (Button) view;
-            btn.setText(text);
-            if (fontSize > 0) btn.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize);
-            btn.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
-            btn.setAllCaps(false);
-            btn.setIncludeFontPadding(false);
-            btn.setGravity(Gravity.CENTER);
-            btn.setMinHeight(0);
-            btn.setMinimumHeight(0);
-            btn.setElevation(0);
-            android.graphics.drawable.GradientDrawable btnBg = new android.graphics.drawable.GradientDrawable();
-            btnBg.setColor(android.graphics.Color.parseColor("#007AFF"));
-            btnBg.setCornerRadius(dp(8));
-            btn.setBackground(btnBg);
-            btn.setTextColor(android.graphics.Color.WHITE);
-            btn.setPadding(dp(16), 0, dp(16), 0);
-            final long eventHandler = handler;
-            if (eventHandler != 0) {
-                view.setOnClickListener(new View.OnClickListener() {
-                    @Override public void onClick(View clicked) { nativeDispatchEvent(eventHandler); }
-                });
-            } else {
-                view.setOnClickListener(null);
-            }
-        }
-        if (view instanceof EditText) {
-            EditText field = (EditText) view;
-            if (field instanceof NativeEditText) ((NativeEditText) field).selectionHandler = 0;
-            field.setSingleLine(!multiline);
-            field.setGravity(multiline ? Gravity.TOP | Gravity.START : Gravity.CENTER_VERTICAL);
-            field.setIncludeFontPadding(false);
-            field.setMinHeight(dp(44));
-            field.setHint(placeholder);
-            field.setTextColor(android.graphics.Color.BLACK);
-            field.setHintTextColor(android.graphics.Color.parseColor("#8E8E93"));
-            android.graphics.drawable.GradientDrawable fieldBg = new android.graphics.drawable.GradientDrawable();
-            fieldBg.setColor(android.graphics.Color.parseColor("#FAFAFC"));
-            fieldBg.setCornerRadius(dp(8));
-            fieldBg.setStroke(dp(1), android.graphics.Color.parseColor("#D1D1D6"));
-            field.setBackground(fieldBg);
-            int padX = dp(12), padY = dp(8);
-            field.setPadding(padX, padY, padX, padY);
-            TextWatcher existing = textWatchers.get(field);
-            if (existing != null) field.removeTextChangedListener(existing);
-            boolean initialize = !initializedInputs.containsKey(field);
-            if ((inputMode == 0 || initialize) && text != null && !field.getText().toString().equals(text)) field.setText(text);
-            initializedInputs.put(field, Boolean.TRUE);
-            field.setTextSize(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, fontSize > 0 ? fontSize : 16);
-            field.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
-            field.setInputType(resolveInputType(inputKind, capitalization, autoCorrect, secure, multiline));
-            field.setTransformationMethod(secure ? PasswordTransformationMethod.getInstance() : null);
-            field.setImeOptions(resolveImeAction(returnKey) | (multiline && returnKey == 0 ? EditorInfo.IME_FLAG_NO_ENTER_ACTION : 0));
-            field.setMaxLines(maxLines > 0 ? maxLines : (multiline ? Integer.MAX_VALUE : 1));
-            field.setFilters(maxLength > 0 ? new InputFilter[]{new InputFilter.LengthFilter(maxLength)} : new InputFilter[0]);
-            field.setFocusable(!readOnly);
-            field.setFocusableInTouchMode(!readOnly);
-            field.setCursorVisible(!readOnly);
-            field.setLongClickable(!readOnly);
-            if (validationState == 2) field.setError(errorText.isEmpty() ? "Invalid value" : errorText); else field.setError(null);
-            final long actionHandler = submitHandler;
-            field.setOnEditorActionListener(new TextView.OnEditorActionListener() {
-                @Override public boolean onEditorAction(TextView ignored, int actionId, android.view.KeyEvent event) {
-                    boolean enter = event != null && event.getKeyCode() == android.view.KeyEvent.KEYCODE_ENTER && event.getAction() == android.view.KeyEvent.ACTION_UP;
-                    if (actionHandler != 0 && (actionId != EditorInfo.IME_ACTION_NONE || (!multiline && enter))) { nativeDispatchEvent(actionHandler); return true; }
-                    return false;
-                }
-            });
-            if (selectionStart >= 0 && selectionEnd >= selectionStart) {
-                int safeStart = Math.min(selectionStart, field.length()), safeEnd = Math.min(selectionEnd, field.length());
-                if (field.getSelectionStart() != safeStart || field.getSelectionEnd() != safeEnd) field.setSelection(safeStart, safeEnd);
-            } else if (initialize) field.setSelection(field.length());
-            if (field instanceof NativeEditText) ((NativeEditText) field).selectionHandler = selectionHandler;
-            final long eventHandler = changeHandler;
-            TextWatcher watcher = new TextWatcher() {
-                public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-                public void onTextChanged(CharSequence s, int start, int before, int count) { if (eventHandler != 0) nativeDispatchValueEvent(eventHandler, s.toString()); }
-                public void afterTextChanged(Editable s) {}
-            };
-            field.addTextChangedListener(watcher); textWatchers.put(field, watcher);
-        }
-        if (view instanceof Switch) {
-            Switch toggle = (Switch) view;
-            toggle.setOnCheckedChangeListener(null); toggle.setChecked(checked);
-            final long eventHandler = toggleHandler;
-            if (eventHandler != 0) {
-                toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-                    @Override public void onCheckedChanged(CompoundButton button, boolean value) { nativeDispatchBoolEvent(eventHandler, value); }
-                });
-            }
-        }
-        if (view instanceof ProgressBar) { ((ProgressBar) view).setProgress(Math.round(progress * 10000)); }
-        if (view instanceof ImageView) {
-            ImageView image = (ImageView) view;
-            if (imageSource != null && !imageSource.isEmpty()) {
-                int resource = getResources().getIdentifier(imageSource, "drawable", getPackageName());
-                if (resource == 0) resource = getResources().getIdentifier(imageSource, "mipmap", getPackageName());
-                if (resource != 0) {
-                    image.setImageResource(resource);
-                } else if ("app_logo".equals(imageSource)) {
-                    android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
-                    gd.setColor(android.graphics.Color.parseColor("#007AFF"));
-                    gd.setCornerRadius(dp(16));
-                    image.setBackground(gd);
-                    image.setImageResource(android.R.drawable.ic_lock_lock);
-                    image.setColorFilter(android.graphics.Color.WHITE);
-                    int pad = dp(12);
-                    image.setPadding(pad, pad, pad, pad);
-                } else if ("avatar".equals(imageSource)) {
-                    android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
-                    gd.setColor(android.graphics.Color.parseColor("#007AFF"));
-                    gd.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-                    image.setBackground(gd);
-                    image.setImageResource(android.R.drawable.ic_menu_myplaces);
-                    image.setColorFilter(android.graphics.Color.WHITE);
-                    int pad = dp(10);
-                    image.setPadding(pad, pad, pad, pad);
-                } else {
-                    image.setImageDrawable(null);
-                }
-            } else {
-                image.setImageDrawable(null);
-            }
-            image.setScaleType(imageMode == 1 ? ImageView.ScaleType.CENTER_CROP : imageMode == 2 ? ImageView.ScaleType.CENTER : ImageView.ScaleType.FIT_CENTER);
-        }
-        int paddingPx = dp(padding);
-        if (view instanceof EditText) {
-            view.setPadding(dp(12) + paddingPx, dp(8) + paddingPx, dp(12) + paddingPx, dp(8) + paddingPx);
-        } else {
-            view.setPadding(paddingPx, paddingPx, paddingPx, paddingPx);
-        }
-        view.setContentDescription(accessibility.isEmpty() ? text : accessibility);
-        view.setAccessibilityDelegate(new View.AccessibilityDelegate() {
-            @Override public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {
-                super.onInitializeAccessibilityNodeInfo(host, info);
-                if (role == 1 || role == 3) info.setClassName(TextView.class.getName());
-                else if (role == 2) info.setClassName(Button.class.getName());
-                else if (role == 4) info.setClassName("android.widget.ImageView");
-                if (android.os.Build.VERSION.SDK_INT >= 26 && !hint.isEmpty()) info.setHintText(hint);
-                if (android.os.Build.VERSION.SDK_INT >= 28 && role == 3) info.setHeading(true);
-                if (view instanceof EditText && validationState == 2) {
-                    info.setContentInvalid(true);
-                    info.setError(errorText.isEmpty() ? "Invalid value" : errorText);
-                }
-            }
-        });
-        if (focused) {
-            view.requestFocus();
-            view.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED);
-        } else if (view.hasFocus()) {
-            view.clearFocus();
-        }
-        ViewGroup.LayoutParams current = view.getLayoutParams();
-        int requestedWidth = width > 0 ? dp(width) : ViewGroup.LayoutParams.WRAP_CONTENT;
-        int requestedHeight = height > 0 ? dp(height) : ViewGroup.LayoutParams.WRAP_CONTENT;
-        if (current == null) current = new LinearLayout.LayoutParams(requestedWidth, requestedHeight);
-        current.width = requestedWidth;
-        current.height = requestedHeight;
-        view.setLayoutParams(current);
-        if (view instanceof LinearLayout) {
-            LinearLayout container = (LinearLayout) view;
-            container.setGravity(alignment == 1 ? Gravity.CENTER : alignment == 2 ? Gravity.END : Gravity.START);
-            container.setShowDividers(gap > 0 ? LinearLayout.SHOW_DIVIDER_MIDDLE : LinearLayout.SHOW_DIVIDER_NONE);
-            if (gap > 0) container.setDividerDrawable(new GapDrawable(dp(gap), container.getOrientation()));
-        }
-    }
-
-    private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
-
-    private int resolveInputType(int kind, int capitalization, int autoCorrect, boolean secure, boolean multiline) {
-        int type;
-        if (kind == 1) type = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS;
-        else if (kind == 2) type = InputType.TYPE_CLASS_PHONE;
-        else if (kind == 3) type = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI;
-        else if (kind == 4) type = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED;
-        else if (kind == 5) type = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL | InputType.TYPE_NUMBER_FLAG_SIGNED;
-        else type = InputType.TYPE_CLASS_TEXT | (kind == 6 ? InputType.TYPE_TEXT_VARIATION_FILTER : InputType.TYPE_TEXT_VARIATION_NORMAL);
-        if ((type & InputType.TYPE_CLASS_TEXT) != 0) {
-            if (capitalization == 1) type |= InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;
-            else if (capitalization == 2) type |= InputType.TYPE_TEXT_FLAG_CAP_WORDS;
-            else if (capitalization == 3) type |= InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS;
-            if (autoCorrect == 1) type |= InputType.TYPE_TEXT_FLAG_AUTO_CORRECT;
-            else if (autoCorrect == 2) type |= InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
-            if (multiline) type |= InputType.TYPE_TEXT_FLAG_MULTI_LINE;
-            if (secure) type = (type & ~InputType.TYPE_MASK_VARIATION) | InputType.TYPE_TEXT_VARIATION_PASSWORD;
-        }
-        return type;
-    }
-
-    private int resolveImeAction(int key) {
-        if (key == 1) return EditorInfo.IME_ACTION_DONE;
-        if (key == 2) return EditorInfo.IME_ACTION_GO;
-        if (key == 3) return EditorInfo.IME_ACTION_NEXT;
-        if (key == 4) return EditorInfo.IME_ACTION_SEARCH;
-        if (key == 5) return EditorInfo.IME_ACTION_SEND;
-        return EditorInfo.IME_ACTION_NONE;
-    }
-
-    private CharSequence decodeRichText(byte[] payload, final long linkHandler, boolean scalesText) {
-        if (payload == null || payload.length == 0) return null;
-        try {
-            ProtocolReader in = new ProtocolReader(payload);
-            if (in.remaining() < 6 || in.uint16() != 1) return null;
-            long count = in.uint32();
-            if (count > 100000) return null;
-            SpannableStringBuilder output = new SpannableStringBuilder();
-            for (long i = 0; i < count; i++) {
-                final String spanText = in.requiredString(), link = in.requiredString();
-                if (in.remaining() < 12) return null;
-                float size = in.float32(); int weight = in.uint16(); int flags = in.uint8(); boolean hasColor = in.uint8() != 0;
-                int red = in.uint8(), green = in.uint8(), blue = in.uint8(), alpha = in.uint8();
-                int color = android.graphics.Color.argb(alpha, red, green, blue);
-                int start = output.length(); output.append(spanText); int end = output.length();
-                if (size > 0) {
-                    int pixels = Math.round(TypedValue.applyDimension(scalesText ? TypedValue.COMPLEX_UNIT_SP : TypedValue.COMPLEX_UNIT_DIP, size, getResources().getDisplayMetrics()));
-                    output.setSpan(new android.text.style.AbsoluteSizeSpan(pixels), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                }
-                if (weight >= 600 || (flags & 2) != 0) output.setSpan(new StyleSpan(weight >= 600 && (flags & 2) != 0 ? Typeface.BOLD_ITALIC : weight >= 600 ? Typeface.BOLD : Typeface.ITALIC), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                if ((flags & 1) != 0) output.setSpan(new UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                if (hasColor) output.setSpan(new ForegroundColorSpan(color), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                if (!link.isEmpty() && linkHandler != 0) output.setSpan(new ClickableSpan() { @Override public void onClick(View widget) { nativeDispatchValueEvent(linkHandler, link); } }, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
-            return in.hasRemaining() ? null : output;
-        } catch (Throwable ignored) { return null; }
-    }
-
-    private final class NativeEditText extends EditText {
-        long selectionHandler;
-        NativeEditText() { super(GoNativeActivity.this); }
-        @Override protected void onSelectionChanged(int start, int end) {
-            super.onSelectionChanged(start, end);
-            if (selectionHandler != 0) nativeDispatchSelectionEvent(selectionHandler, start, end);
-        }
-    }
-
-    private void applyInteractions(long nodeID, View view, byte[] payload) {
-        if (view == null) return;
-        GestureBinding old = gestureBindings.get(nodeID);
-        if (old != null) old.dispose();
-        gestureBindings.remove(nodeID);
-        if (payload == null || payload.length < 4) return;
-        ProtocolReader in = new ProtocolReader(payload);
-        ArrayList<GestureSpec> gestures = new ArrayList<>();
-        int gestureCount = in.int32();
-        for (int i = 0; i < gestureCount && in.remaining() >= 26; i++) {
-            GestureSpec spec = new GestureSpec();
-            spec.kind = in.uint8();
-            spec.direction = in.uint8();
-            spec.minimumPressNanos = in.int64();
-            spec.minimumTravel = in.float32();
-            spec.handler = in.int64();
-            gestures.add(spec);
-        }
-        if (!gestures.isEmpty()) {
-            GestureBinding binding = new GestureBinding(view, gestures);
-            gestureBindings.put(nodeID, binding);
-            view.setOnTouchListener(binding);
-        } else view.setOnTouchListener(null);
-
-        if (in.remaining() < 4) return;
-        int animationCount = in.int32();
-        ArrayList<Animator> animations = new ArrayList<>();
-        for (int i = 0; i < animationCount && in.remaining() >= 42; i++) {
-            int property = in.uint8();
-            long durationNanos = in.int64();
-            long delayNanos = in.int64();
-            int curve = in.uint8();
-            float damping = in.float32();
-            float velocity = in.float32();
-            boolean reduceMotionOK = in.uint8() != 0;
-            float from = in.float32(), to = in.float32(), fromX = in.float32(), fromY = in.float32(), toX = in.float32(), toY = in.float32();
-            Animator animator = makeAnimator(view, property, from, to, fromX, fromY, toX, toY);
-            if (animator == null) continue;
-            animator.setDuration(Math.max(0, durationNanos / 1000000L));
-            animator.setStartDelay(Math.max(0, delayNanos / 1000000L));
-            if (curve == 1) animator.setInterpolator(new AccelerateInterpolator());
-            else if (curve == 2) animator.setInterpolator(new DecelerateInterpolator());
-            else if (curve == 3) animator.setInterpolator(new LinearInterpolator());
-            else if (curve == 4) animator.setInterpolator(new OvershootInterpolator(Math.max(.1f, (1f - damping) * 2f + Math.abs(velocity) * .1f)));
-            else animator.setInterpolator(new AccelerateDecelerateInterpolator());
-            if (!reduceMotionOK && android.os.Build.VERSION.SDK_INT >= 26 && !ValueAnimator.areAnimatorsEnabled()) animator.setDuration(0);
-            animations.add(animator);
-        }
-        if (!animations.isEmpty()) { AnimatorSet set = new AnimatorSet(); set.playSequentially(animations); set.start(); }
-    }
-
-    private Animator makeAnimator(final View view, int property, float from, float to, float fromX, float fromY, float toX, float toY) {
-        if (property == 1) return ObjectAnimator.ofFloat(view, View.ALPHA, from, to);
-        if (property == 2) { AnimatorSet set = new AnimatorSet(); set.playTogether(ObjectAnimator.ofFloat(view, View.SCALE_X, from, to), ObjectAnimator.ofFloat(view, View.SCALE_Y, from, to)); return set; }
-        if (property == 3) { AnimatorSet set = new AnimatorSet(); set.playTogether(ObjectAnimator.ofFloat(view, View.TRANSLATION_X, dp(fromX), dp(toX)), ObjectAnimator.ofFloat(view, View.TRANSLATION_Y, dp(fromY), dp(toY))); return set; }
-        if (property == 4) {
-            ValueAnimator animator = ValueAnimator.ofFloat(0, 1);
-            animator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
-                @Override public void onAnimationUpdate(ValueAnimator animation) { view.requestLayout(); }
-            });
-            return animator;
-        }
-        return null;
-    }
-
-    private static final class GestureSpec { int kind, direction; long minimumPressNanos, handler; float minimumTravel; }
-
-    private final class GestureBinding implements View.OnTouchListener {
-        final View view; final List<GestureSpec> specs; final ArrayList<Runnable> pending = new ArrayList<>();
-        VelocityTracker velocity; float downX, downY; long downTime; boolean moved;
-        GestureBinding(View view, List<GestureSpec> specs) { this.view = view; this.specs = specs; }
-        void dispose() { for (Runnable r : pending) view.removeCallbacks(r); pending.clear(); if (velocity != null) velocity.recycle(); velocity = null; view.setOnTouchListener(null); }
-        void emit(GestureSpec s, float x, float y, float vx, float vy) { if (s.handler != 0) nativeDispatchGestureEvent(s.handler, x / getResources().getDisplayMetrics().density, y / getResources().getDisplayMetrics().density, vx / getResources().getDisplayMetrics().density, vy / getResources().getDisplayMetrics().density); }
-        @Override public boolean onTouch(View ignored, MotionEvent event) {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                downX=event.getX(); downY=event.getY(); downTime=System.nanoTime(); moved=false;
-                velocity=VelocityTracker.obtain(); velocity.addMovement(event);
-                for (final GestureSpec s : specs) if (s.kind == 2) {
-                    Runnable r = new Runnable() {
-                        @Override public void run() { if (!moved) emit(s, 0, 0, 0, 0); }
-                    };
-                    pending.add(r);
-                    view.postDelayed(r, Math.max(0, s.minimumPressNanos / 1000000L));
-                }
-                return true;
-            }
-            if (velocity != null) velocity.addMovement(event);
-            float dx=event.getX()-downX, dy=event.getY()-downY;
-            if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
-                for (GestureSpec s:specs) if (Math.hypot(dx,dy) >= dp(s.minimumTravel)) { moved=true; if(s.kind==4) { velocity.computeCurrentVelocity(1000); emit(s,dx,dy,velocity.getXVelocity(),velocity.getYVelocity()); } }
-                if(moved) { for(Runnable r:pending)view.removeCallbacks(r); pending.clear(); }
-            } else if (event.getActionMasked() == MotionEvent.ACTION_UP) {
-                for(Runnable r:pending)view.removeCallbacks(r); pending.clear(); velocity.computeCurrentVelocity(1000); float vx=velocity.getXVelocity(),vy=velocity.getYVelocity();
-                for(GestureSpec s:specs) {
-                    float distance=(float)Math.hypot(dx,dy);
-                    if(s.kind==1 && distance < dp(Math.max(8,s.minimumTravel))) emit(s,dx,dy,vx,vy);
-                    if(s.kind==3 && distance >= dp(s.minimumTravel) && directionMatches(s.direction,dx,dy)) emit(s,dx,dy,vx,vy);
-                    if(s.kind==4) emit(s,dx,dy,vx,vy);
-                }
-                if (view instanceof Button && !moved) view.performClick();
-                velocity.recycle(); velocity=null;
-            } else if(event.getActionMasked()==MotionEvent.ACTION_CANCEL) disposePending();
-            return true;
-        }
-        void disposePending(){for(Runnable r:pending)view.removeCallbacks(r);pending.clear();if(velocity!=null){velocity.recycle();velocity=null;}}
-        boolean directionMatches(int direction,float dx,float dy){ if(direction==0)return true;if(direction==1)return dy<0&&Math.abs(dy)>=Math.abs(dx);if(direction==2)return dy>0&&Math.abs(dy)>=Math.abs(dx);boolean rtl=view.getLayoutDirection()==View.LAYOUT_DIRECTION_RTL;if(direction==3)return rtl?dx>0:dx<0;if(direction==4)return rtl?dx<0:dx>0;return false; }
-    }
-
-    private static void detach(View view) {
-        if (view != null && view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
-    }
-
 }
