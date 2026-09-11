@@ -46,9 +46,12 @@ func TestInitCreatesCompleteNativeScaffold(t *testing.T) {
 		"app.go",
 		"README.md",
 		".gitignore",
+		"assets/.gitkeep",
 		// iOS & Xcode
 		"ios/hello-native.xcodeproj/project.pbxproj",
 		"ios/hello-native.xcodeproj/xcshareddata/xcschemes/hello-native.xcscheme",
+		"ios/AppDelegate.h",
+		"ios/AppDelegate.m",
 		"ios/main.m",
 		"ios/Info.plist",
 		"ios/bridge/main.go",
@@ -59,6 +62,7 @@ func TestInitCreatesCompleteNativeScaffold(t *testing.T) {
 		"android/build-libs.sh",
 		"android/app/build.gradle",
 		"android/app/src/main/AndroidManifest.xml",
+		"android/app/src/main/res/values/strings.xml",
 		"android/app/src/main/res/values/styles.xml",
 		"android/app/src/main/java/dev/gonative/hello_native/MainActivity.java",
 		"android/bridge/main.go",
@@ -85,8 +89,24 @@ func TestInitCreatesCompleteNativeScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(manifest), "package=\"dev.gonative.hello_native\"") {
+	if strings.Contains(string(manifest), "package=") || !strings.Contains(string(manifest), "android:label=\"@string/app_name\"") {
 		t.Fatalf("unexpected Android manifest:\n%s", manifest)
+	}
+
+	stringsXML, err := os.ReadFile(filepath.Join(destination, "android", "app", "src", "main", "res", "values", "strings.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(stringsXML), `<string name="app_name">hello-native</string>`) {
+		t.Fatalf("unexpected strings.xml:\n%s", stringsXML)
+	}
+
+	infoPlist, err := os.ReadFile(filepath.Join(destination, "ios", "Info.plist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(infoPlist), "<key>CFBundleDisplayName</key>\n    <string>hello-native</string>") {
+		t.Fatalf("unexpected Info.plist:\n%s", infoPlist)
 	}
 
 	pbx, err := os.ReadFile(filepath.Join(destination, "ios", "hello-native.xcodeproj", "project.pbxproj"))
@@ -95,6 +115,33 @@ func TestInitCreatesCompleteNativeScaffold(t *testing.T) {
 	}
 	if !strings.Contains(string(pbx), "PBXNativeTarget") {
 		t.Fatalf("unexpected pbxproj:\n%s", pbx)
+	}
+	if !strings.Contains(string(pbx), "AppDelegate.m in Sources") {
+		t.Fatalf("pbxproj missing AppDelegate.m in Sources:\n%s", pbx)
+	}
+
+	appDelegateH, err := os.ReadFile(filepath.Join(destination, "ios", "AppDelegate.h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(appDelegateH), "@interface AppDelegate : UIResponder <UIApplicationDelegate>") {
+		t.Fatalf("unexpected AppDelegate.h:\n%s", appDelegateH)
+	}
+
+	appDelegateM, err := os.ReadFile(filepath.Join(destination, "ios", "AppDelegate.m"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(appDelegateM), "@implementation AppDelegate") || !strings.Contains(string(appDelegateM), "GNRootViewController") {
+		t.Fatalf("unexpected AppDelegate.m:\n%s", appDelegateM)
+	}
+
+	mainM, err := os.ReadFile(filepath.Join(destination, "ios", "main.m"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mainM), "NSStringFromClass([AppDelegate class])") {
+		t.Fatalf("unexpected main.m:\n%s", mainM)
 	}
 
 	jni, err := os.ReadFile(filepath.Join(destination, "android", "bridge", "jni.c"))

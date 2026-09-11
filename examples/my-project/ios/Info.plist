@@ -4,10 +4,12 @@
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>my-project</string>
     <key>CFBundleExecutable</key>
     <string>my-project</string>
     <key>CFBundleIdentifier</key>
-    <string>dev.gonative.my_project</string>
+    <string>dev.gonative.my-project</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

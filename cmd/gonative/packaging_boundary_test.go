@@ -25,6 +25,8 @@ func TestExtractedIOSModulesRemainFrameworkOwned(t *testing.T) {
 		"GNMeasurementHost.m",
 		"GNControls.h",
 		"GNControls.m",
+		"GoNativeRenderer.h",
+		"GoNativeRenderer.m",
 	}
 	templates := getProjectTemplates("ownership-check")
 
@@ -63,6 +65,7 @@ func TestExtractedAndroidModulesRemainFrameworkOwned(t *testing.T) {
 		"ControlFactory.java",
 		"GestureBinding.java",
 		"EventDispatcher.java",
+		"GapDrawable.java",
 	}
 
 	templates := getProjectTemplates("ownership-check")

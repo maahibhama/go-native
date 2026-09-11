@@ -20,6 +20,7 @@ Branch: `feat/v1/app_code_clean`
 - [x] Build `gonative-runtime.aar` and consume the runtime module from the framework fixture.
 - [x] Consume the packaged AAR from generated standalone applications.
 - [x] Reduce generated projects and regenerate `examples/my-project` as a thin consumer.
+- [x] Standardize iOS `AppDelegate` (`AppDelegate.h`, `AppDelegate.m`, `main.m`) and Android `MainActivity` host launchers mirroring React Native architecture.
 
 ## Outcome
 
@@ -53,7 +54,9 @@ my-app/
 ├── gonative.yaml
 ├── assets/
 ├── ios/
-│   ├── AppDelegate.swift
+│   ├── AppDelegate.h
+│   ├── AppDelegate.m
+│   ├── main.m
 │   ├── Info.plist
 │   └── MyApp.xcodeproj
 └── android/
@@ -62,7 +65,7 @@ my-app/
         ├── build.gradle
         └── src/main/
             ├── AndroidManifest.xml
-            └── java/.../MainActivity.kt
+            └── java/.../MainActivity.java
 ```
 
 The generated project must not contain a mutation decoder, native view registry,

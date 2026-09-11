@@ -224,6 +224,7 @@ func runStandalonePlatformCommand(root, action, platform string, runner commandR
 			"-I" + buildDir,
 			"-I" + filepath.Join(frameworkRoot, "build", "native", "GoNativeKit.xcframework", "ios-arm64-simulator", "Headers"),
 			filepath.Join(root, "ios", "main.m"),
+			filepath.Join(root, "ios", "AppDelegate.m"),
 			filepath.Join(frameworkRoot, "build", "native", "GoNativeKit.xcframework", "ios-arm64-simulator", "libGoNativeKit.a"),
 			filepath.Join(buildDir, "counter.a"),
 			"-o", filepath.Join(appBundle, appName),
@@ -249,7 +250,7 @@ func runStandalonePlatformCommand(root, action, platform string, runner commandR
 		if err := runner.Run("xcrun", []string{"simctl", "install", simName, appBundle}, root, env, stdout, stderr); err != nil {
 			return fmt.Errorf("simctl install: %w", err)
 		}
-		bundleID := fmt.Sprintf("dev.gonative.%s", pkg)
+		bundleID := fmt.Sprintf("dev.gonative.%s", sanitizeBundleIdentifierPart(appName))
 		if err := runner.Run("xcrun", []string{"simctl", "launch", simName, bundleID}, root, env, stdout, stderr); err != nil {
 			return fmt.Errorf("simctl launch: %w", err)
 		}

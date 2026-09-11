@@ -7,11 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		100000000000000000000014 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000013 /* AppDelegate.m */; };
 		100000000000000000000011 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000010 /* main.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		100000000000000000000003 /* my-project.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "my-project.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000000012 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
+		100000000000000000000013 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
 		100000000000000000000010 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		100000000000000000000015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -30,6 +33,8 @@
 		100000000000000000000004 = {
 			isa = PBXGroup;
 			children = (
+				100000000000000000000012 /* AppDelegate.h */,
+				100000000000000000000013 /* AppDelegate.m */,
 				100000000000000000000010 /* main.m */,
 				100000000000000000000015 /* Info.plist */,
 				100000000000000000000003 /* my-project.app */,
@@ -122,6 +127,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				100000000000000000000014 /* AppDelegate.m in Sources */,
 				100000000000000000000011 /* main.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -180,6 +186,7 @@
 		10000000000000000000000D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -209,7 +216,7 @@
 					"-framework",
 					"CoreGraphics",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "dev.gonative.my_project";
+				PRODUCT_BUNDLE_IDENTIFIER = "dev.gonative.my-project";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -219,6 +226,7 @@
 		10000000000000000000000E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -248,7 +256,7 @@
 					"-framework",
 					"CoreGraphics",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "dev.gonative.my_project";
+				PRODUCT_BUNDLE_IDENTIFIER = "dev.gonative.my-project";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
