@@ -12,7 +12,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		100000000000000000000003 /* my-project.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "my-project.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000000003 /* showcase-app.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "showcase-app.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		100000000000000000000012 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		100000000000000000000013 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
 		100000000000000000000010 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
@@ -37,16 +37,16 @@
 				100000000000000000000013 /* AppDelegate.m */,
 				100000000000000000000010 /* main.m */,
 				100000000000000000000015 /* Info.plist */,
-				100000000000000000000003 /* my-project.app */,
+				100000000000000000000003 /* showcase-app.app */,
 			);
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		100000000000000000000002 /* my-project */ = {
+		100000000000000000000002 /* showcase-app */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 10000000000000000000000A /* Build configuration list for PBXNativeTarget "my-project" */;
+			buildConfigurationList = 10000000000000000000000A /* Build configuration list for PBXNativeTarget "showcase-app" */;
 			buildPhases = (
 				100000000000000000000008 /* Build Go Native Bridge */,
 				100000000000000000000005 /* Sources */,
@@ -57,9 +57,9 @@
 			);
 			dependencies = (
 			);
-			name = "my-project";
-			productName = "my-project";
-			productReference = 100000000000000000000003 /* my-project.app */;
+			name = "showcase-app";
+			productName = "showcase-app";
+			productReference = 100000000000000000000003 /* showcase-app.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -71,7 +71,7 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 1500;
 			};
-			buildConfigurationList = 100000000000000000000009 /* Build configuration list for PBXProject "my-project" */;
+			buildConfigurationList = 100000000000000000000009 /* Build configuration list for PBXProject "showcase-app" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -84,7 +84,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				100000000000000000000002 /* my-project */,
+				100000000000000000000002 /* showcase-app */,
 			);
 		};
 /* End PBXProject section */
@@ -216,7 +216,7 @@
 					"-framework",
 					"CoreGraphics",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "dev.gonative.my-project";
+				PRODUCT_BUNDLE_IDENTIFIER = "dev.gonative.showcase-app";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -256,7 +256,7 @@
 					"-framework",
 					"CoreGraphics",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "dev.gonative.my-project";
+				PRODUCT_BUNDLE_IDENTIFIER = "dev.gonative.showcase-app";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -266,7 +266,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		100000000000000000000009 /* Build configuration list for PBXProject "my-project" */ = {
+		100000000000000000000009 /* Build configuration list for PBXProject "showcase-app" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				10000000000000000000000B /* Debug */,
@@ -275,7 +275,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		10000000000000000000000A /* Build configuration list for PBXNativeTarget "my-project" */ = {
+		10000000000000000000000A /* Build configuration list for PBXNativeTarget "showcase-app" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				10000000000000000000000D /* Debug */,

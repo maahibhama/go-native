@@ -1,4 +1,4 @@
-package dev.gonative.my_project;
+package dev.gonative.showcase_app;
 
 import dev.gonative.runtime.GoNativeActivity;
 

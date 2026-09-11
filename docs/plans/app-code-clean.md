@@ -19,7 +19,7 @@ Branch: `feat/v1/app_code_clean`
 - [x] Build a reproducible `GoNativeKit.xcframework` with device and simulator slices.
 - [x] Build `gonative-runtime.aar` and consume the runtime module from the framework fixture.
 - [x] Consume the packaged AAR from generated standalone applications.
-- [x] Reduce generated projects and regenerate `examples/my-project` as a thin consumer.
+- [x] Reduce generated projects and regenerate `examples/showcase-app` as a thin consumer.
 - [x] Standardize iOS `AppDelegate` (`AppDelegate.h`, `AppDelegate.m`, `main.m`) and Android `MainActivity` host launchers mirroring React Native architecture.
 
 ## Outcome
@@ -164,11 +164,11 @@ Acceptance:
 - Replace native renderer blobs in `cmd/gonative/templates.go` with small launchers.
 - Generate a manifest containing framework and protocol compatibility requirements.
 - Teach `gonative init`, `build`, and `run` to resolve or build native artifacts.
-- Regenerate `examples/my-project` only through the generator.
+- Regenerate `examples/showcase-app` only through the generator.
 
 Acceptance:
 
-- `examples/my-project` consumes the frameworks and contains no renderer copy.
+- `examples/showcase-app` consumes the frameworks and contains no renderer copy.
 - `gonative init` output is small and understandable.
 - Xcode and Android Studio builds work without framework repository paths.
 
@@ -227,12 +227,12 @@ carry a header and are replaced deterministically; user files are never overwrit
 During v0, land the work in compatibility-preserving slices. Keep the old source
 integration available behind an internal fallback until both packaged fixture builds
 pass. Remove copied renderers only after `gonative init`, framework examples, and
-`examples/my-project` use the packaged path. Document every generated-project change
+`examples/showcase-app` use the packaged path. Document every generated-project change
 in `docs/migrations/`.
 
 ## Completion definition
 
 This cleanup is complete when native renderer implementation exists in exactly one
 framework-owned location per platform, templates contain only launch/configuration
-code, `examples/my-project` is an ordinary consumer, and both platforms communicate
+code, `examples/showcase-app` is an ordinary consumer, and both platforms communicate
 with compiled Go application code through the versioned app-neutral ABI.

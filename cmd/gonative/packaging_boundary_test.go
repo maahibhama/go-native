@@ -42,7 +42,7 @@ func TestExtractedIOSModulesRemainFrameworkOwned(t *testing.T) {
 				t.Fatalf("framework-owned source %q must not be copied by gonative init", generatedPath)
 			}
 
-			fixturePath := filepath.Join(root, "examples", "my-project", "ios", name)
+			fixturePath := filepath.Join(root, "examples", "showcase-app", "ios", name)
 			if _, err := os.Stat(fixturePath); err == nil {
 				t.Fatalf("framework-owned source was copied into generated fixture: %s", fixturePath)
 			} else if !os.IsNotExist(err) {
@@ -83,7 +83,7 @@ func TestExtractedAndroidModulesRemainFrameworkOwned(t *testing.T) {
 				}
 			}
 
-			fixturePath := filepath.Join(root, "examples", "my-project", "android", "app", "src", "main", "java", "dev", "gonative", "runtime", name)
+			fixturePath := filepath.Join(root, "examples", "showcase-app", "android", "app", "src", "main", "java", "dev", "gonative", "runtime", name)
 			if _, err := os.Stat(fixturePath); err == nil {
 				t.Fatalf("framework-owned Android source was copied into generated fixture: %s", fixturePath)
 			} else if !os.IsNotExist(err) {

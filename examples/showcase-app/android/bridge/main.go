@@ -21,7 +21,7 @@ import (
 	gnruntime "github.com/go-native/go-native/runtime"
 	"github.com/go-native/go-native/runtime/layout"
 	"github.com/go-native/go-native/ui"
-	"my-project"
+	"showcase-app"
 )
 
 var benchmarkOutput string

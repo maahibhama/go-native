@@ -1,8 +1,6 @@
-# my-project
+# showcase-app
 
 A Go Native application. The UI is declared in app.go and renders genuine platform-native controls on iOS and Android.
-
-After signing in, the dashboard includes a production-layout API example covering mounted hooks, responsive breakpoints, flex metadata, adaptive grid columns, aspect ratio, and logical LTR/RTL layout.
 
 ## Project Map
 - app.go: Declarative UI tree written in Go.
@@ -25,5 +23,5 @@ gonative run android
 ```
 
 ## IDE Usage
-- **Xcode**: Open `ios/my-project.xcodeproj` in Xcode and click **Run** (Cmd+R).
+- **Xcode**: Open `ios/showcase-app.xcodeproj` in Xcode and click **Run** (Cmd+R).
 - **Android Studio**: Open the `android/` directory in Android Studio and click **Run** (Shift+F10).

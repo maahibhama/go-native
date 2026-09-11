@@ -34,7 +34,7 @@ For implementation work in this repository, load the project skill at [`.agents/
 - `cmd/gonative/main.go`: CLI dispatch, toolchain doctor, standalone builds.
 - `cmd/gonative/templates.go`: generated standalone project sources. Changes to platform bridges or renderers often need matching template changes.
 - `examples/counter/`: framework demo bridge.
-- `examples/my-project/`: checked-in generated-project fixture; keep it aligned with scaffolding when generator behavior changes.
+- `examples/showcase-app/`: checked-in generated-project fixture; keep it aligned with scaffolding when generator behavior changes.
 - `runtime/inspector/`: loopback-only, read-only diagnostic HTTP service.
 
 Narrative documentation can lag implementation. Resolve discrepancies in this order: tests and live source, ADRs, then overview/roadmap prose. In particular, `docs/architecture.md` and `docs/roadmap.md` currently understate implemented gesture/animation/diagnostic contracts.
@@ -49,7 +49,7 @@ Any wire-visible change—including `ui.NodeType`, mutation values, `ui.Props`, 
 2. `runtime/protocol.go`, `runtime/interactions.go`, `runtime/style_protocol.go`, `runtime/layout/measurement_protocol.go`, and protocol/runtime tests;
 3. iOS and Android framework renderers;
 4. `cmd/gonative/templates.go` generated renderer/bridge text;
-5. checked-in generated example renderers under `examples/my-project/`.
+5. checked-in generated example renderers under `examples/showcase-app/`.
 
 The current outer mutation batch protocol version is `10`. The current native measurement protocol version is `2`. Native decoders compare literal version values, so search for the old version before bumping it. Preserve exact field order, byte widths, signedness, little-endian encoding, and length-prefix handling.
 

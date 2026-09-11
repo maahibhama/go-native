@@ -1,4 +1,4 @@
-module my-project
+module showcase-app
 
 go 1.24
 

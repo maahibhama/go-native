@@ -68,9 +68,9 @@ move toward that design instead of adding more renderer source to application te
 
 - `cmd/gonative/` — CLI and generated project templates.
 - `examples/counter/` — framework development bridge.
-- `examples/my-project/` — checked-in generated application fixture.
+- `examples/showcase-app/` — checked-in generated application fixture.
 
-`cmd/gonative/templates.go` is generated-project source embedded as Go strings. Native protocol changes therefore have four synchronization surfaces: framework iOS, framework Android, templates, and `examples/my-project`.
+`cmd/gonative/templates.go` is generated-project source embedded as Go strings. Native protocol changes therefore have four synchronization surfaces: framework iOS, framework Android, templates, and `examples/showcase-app`.
 
 ## Where a change belongs
 
@@ -81,7 +81,7 @@ move toward that design instead of adding more renderer source to application te
 | Rebuild, identity, or handler behavior | `runtime/` | Race tests and benchmarks |
 | Layout algorithm | `runtime/layout/` | Headless/layout tests and native measurement compatibility |
 | UIKit or Android visual mapping | Both `platform/` hosts | Templates and generated fixture |
-| CLI/scaffold behavior | `cmd/gonative/` | `examples/my-project/` and CLI tests |
+| CLI/scaffold behavior | `cmd/gonative/` | `examples/showcase-app/` and CLI tests |
 
 ## Invariants to check before merging
 
@@ -97,7 +97,7 @@ move toward that design instead of adding more renderer source to application te
 
 For the shortest useful path through the implementation:
 
-1. `examples/my-project/app.go`
+1. `examples/showcase-app/app.go`
 2. `ui/node.go`
 3. `runtime/runtime.go` (`render` method)
 4. `runtime/reconciler.go`
