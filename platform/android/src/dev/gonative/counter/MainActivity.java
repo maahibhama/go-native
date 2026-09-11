@@ -1,5 +1,7 @@
 package dev.gonative.counter;
 
+import dev.gonative.runtime.ProtocolReader;
+
 import android.app.Activity;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -164,37 +166,36 @@ public final class MainActivity extends Activity {
 
     private byte[] measureNativeBatchOnUiThread(byte[] payload) {
         try {
-            ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
-            if (in.remaining() < 6 || Short.toUnsignedInt(in.getShort()) != 2) return null;
-            int count = in.getInt();
+            ProtocolReader in = new ProtocolReader(payload);
+            if (in.remaining() < 6 || in.uint16() != 2) return null;
+            int count = in.int32();
             if (count < 0 || count > 100000) return null;
             ArrayList<NativeMeasurement> measured = new ArrayList<>(count);
             for (int i = 0; i < count; i++) {
                 if (in.remaining() < 25) return null;
-                long id = in.getLong();
-                int kind = Byte.toUnsignedInt(in.get());
-                float minWidth = in.getFloat(), maxWidth = in.getFloat(), minHeight = in.getFloat(), maxHeight = in.getFloat();
-                String text = readRequiredString(in);
-                String imageSource = readRequiredString(in);
+                long id = in.int64();
+                int kind = in.uint8();
+                float minWidth = in.float32(), maxWidth = in.float32(), minHeight = in.float32(), maxHeight = in.float32();
+                String text = in.requiredString();
+                String imageSource = in.requiredString();
                 if (in.remaining() < 13) return null;
-                int textWrap = Byte.toUnsignedInt(in.get()), textOverflow = Byte.toUnsignedInt(in.get());
-                long maxLinesValue = Integer.toUnsignedLong(in.getInt());
+                int textWrap = in.uint8(), textOverflow = in.uint8();
+                long maxLinesValue = in.uint32();
                 if (maxLinesValue > Integer.MAX_VALUE) return null;
                 int maxLines = (int) maxLinesValue;
-                boolean selectable = in.get() != 0;
-                int richTextLength = in.getInt();
+                boolean selectable = in.uint8() != 0;
+                int richTextLength = in.int32();
                 if (richTextLength < 0 || richTextLength > 1048576 || richTextLength > in.remaining()) return null;
-                byte[] richText = new byte[richTextLength]; in.get(richText);
-                String placeholder = readRequiredString(in);
+                byte[] richText = in.bytes(richTextLength);
+                String placeholder = in.requiredString();
                 if (in.remaining() < 7) return null;
-                int inputKind = Byte.toUnsignedInt(in.get());
-                boolean secure = in.get() != 0, multiline = in.get() != 0;
-                int maxLength = in.getInt();
+                int inputKind = in.uint8();
+                boolean secure = in.uint8() != 0, multiline = in.uint8() != 0;
+                int maxLength = in.int32();
                 if (in.remaining() < 4) return null;
-                int styleLength = in.getInt();
+                int styleLength = in.int32();
                 if (styleLength < 0 || styleLength > 1048576 || styleLength > in.remaining()) return null;
-                byte[] typedStyle = new byte[styleLength];
-                in.get(typedStyle);
+                byte[] typedStyle = in.bytes(styleLength);
                 measured.add(measureNativeControl(id, kind, text, imageSource, typedStyle, minWidth, maxWidth, minHeight, maxHeight, textWrap, textOverflow, maxLines, selectable, richText, placeholder, inputKind, secure, multiline, maxLength));
             }
             if (in.hasRemaining()) return null;
@@ -295,82 +296,79 @@ public final class MainActivity extends Activity {
         if (payload == null) return;
         try {
             long started = System.nanoTime();
-            ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+            ProtocolReader in = new ProtocolReader(payload);
             if (in.remaining() < 14) return;
-            if (Short.toUnsignedInt(in.getShort()) != 10) return;
-            int count = in.getInt();
+            if (in.uint16() != 10) return;
+            int count = in.int32();
             if (count < 0 || count > 100000) return;
-            long sequence = in.getLong();
+            long sequence = in.int64();
             for (int operation = 0; operation < count && in.hasRemaining(); operation++) {
-                int mutation = Byte.toUnsignedInt(in.get());
-                int kind = Byte.toUnsignedInt(in.get());
-                long nodeID = in.getLong();
-                long parentID = in.getLong();
-                int index = in.getInt();
-                int fromIndex = in.getInt();
-                float width = in.getFloat();
-                float height = in.getFloat();
-                float padding = in.getFloat();
-                float gap = in.getFloat();
-                int alignment = Byte.toUnsignedInt(in.get());
-                boolean bold = in.get() != 0;
-                float fontSize = in.getFloat();
-                long handler = in.getLong();
-                long changeHandler = in.getLong();
-                long toggleHandler = in.getLong();
-                boolean checked = in.get() != 0;
-                float progress = in.getFloat();
-                String text = readRequiredString(in);
-                String accessibility = readRequiredString(in);
-                String hint = readRequiredString(in);
-                int role = Byte.toUnsignedInt(in.get());
-                boolean focused = in.get() != 0;
-                boolean scalesText = in.get() != 0;
-                String imageSource = readRequiredString(in);
-                int imageMode = Byte.toUnsignedInt(in.get());
-                boolean horizontal = in.get() != 0;
-                int interactionLength = in.remaining() >= 4 ? in.getInt() : 0;
+                int mutation = in.uint8();
+                int kind = in.uint8();
+                long nodeID = in.int64();
+                long parentID = in.int64();
+                int index = in.int32();
+                int fromIndex = in.int32();
+                float width = in.float32();
+                float height = in.float32();
+                float padding = in.float32();
+                float gap = in.float32();
+                int alignment = in.uint8();
+                boolean bold = in.uint8() != 0;
+                float fontSize = in.float32();
+                long handler = in.int64();
+                long changeHandler = in.int64();
+                long toggleHandler = in.int64();
+                boolean checked = in.uint8() != 0;
+                float progress = in.float32();
+                String text = in.requiredString();
+                String accessibility = in.requiredString();
+                String hint = in.requiredString();
+                int role = in.uint8();
+                boolean focused = in.uint8() != 0;
+                boolean scalesText = in.uint8() != 0;
+                String imageSource = in.requiredString();
+                int imageMode = in.uint8();
+                boolean horizontal = in.uint8() != 0;
+                int interactionLength = in.remaining() >= 4 ? in.int32() : 0;
                 if (interactionLength < 0 || interactionLength > 1048576 || interactionLength > in.remaining()) return;
-                byte[] interactions = new byte[interactionLength];
-                if (interactions.length > 0) in.get(interactions);
+                byte[] interactions = in.bytes(interactionLength);
                 if (in.remaining() < 9) return;
-                int textWrap = Byte.toUnsignedInt(in.get());
-                int textOverflow = Byte.toUnsignedInt(in.get());
-                long maxLinesValue = Integer.toUnsignedLong(in.getInt());
+                int textWrap = in.uint8();
+                int textOverflow = in.uint8();
+                long maxLinesValue = in.uint32();
                 if (maxLinesValue > Integer.MAX_VALUE) return;
                 int maxLines = (int) maxLinesValue;
-                boolean selectable = in.get() != 0;
-                int richTextLength = in.getInt();
+                boolean selectable = in.uint8() != 0;
+                int richTextLength = in.int32();
                 if (richTextLength < 0 || richTextLength > 1048576 || richTextLength > in.remaining()) return;
-                byte[] richText = new byte[richTextLength];
-                in.get(richText);
+                byte[] richText = in.bytes(richTextLength);
                 if (in.remaining() < 12) return;
-                long linkHandler = in.getLong();
-                String placeholder = readRequiredString(in);
+                long linkHandler = in.int64();
+                String placeholder = in.requiredString();
                 if (in.remaining() < 36) return;
-                int inputMode = Byte.toUnsignedInt(in.get());
-                int inputKind = Byte.toUnsignedInt(in.get());
-                int returnKey = Byte.toUnsignedInt(in.get());
-                int capitalization = Byte.toUnsignedInt(in.get());
-                int autoCorrect = Byte.toUnsignedInt(in.get());
-                boolean secure = in.get() != 0;
-                boolean multiline = in.get() != 0;
-                boolean readOnly = in.get() != 0;
-                int validationState = Byte.toUnsignedInt(in.get());
-                String errorText = readRequiredString(in);
+                int inputMode = in.uint8();
+                int inputKind = in.uint8();
+                int returnKey = in.uint8();
+                int capitalization = in.uint8();
+                int autoCorrect = in.uint8();
+                boolean secure = in.uint8() != 0;
+                boolean multiline = in.uint8() != 0;
+                boolean readOnly = in.uint8() != 0;
+                int validationState = in.uint8();
+                String errorText = in.requiredString();
                 if (in.remaining() < 32) return;
-                int selectionStart = in.getInt();
-                int selectionEnd = in.getInt();
-                int maxLength = in.getInt();
-                long submitHandler = in.getLong();
-                long selectionHandler = in.getLong();
-                int styleLength = in.remaining() >= 4 ? in.getInt() : -1;
+                int selectionStart = in.int32();
+                int selectionEnd = in.int32();
+                int maxLength = in.int32();
+                long submitHandler = in.int64();
+                long selectionHandler = in.int64();
+                int styleLength = in.remaining() >= 4 ? in.int32() : -1;
                 if (styleLength < 0 || styleLength > 1048576 || styleLength > in.remaining()) return;
-                byte[] typedStyle = new byte[styleLength];
-                in.get(typedStyle);
+                byte[] typedStyle = in.bytes(styleLength);
                 if (in.remaining() < 17) return;
-                boolean hasFrame = in.get() != 0;
-                float frameX = in.getFloat(), frameY = in.getFloat(), frameWidth = in.getFloat(), frameHeight = in.getFloat();
+                boolean hasFrame = in.uint8() != 0;
+                float frameX = in.float32(), frameY = in.float32(), frameWidth = in.float32(), frameHeight = in.float32();
                 View view = views.get(nodeID);
 
                 if (mutation == CREATE) {
@@ -776,16 +774,16 @@ public final class MainActivity extends Activity {
     private CharSequence decodeRichText(byte[] payload, final long linkHandler, boolean scalesText) {
         if (payload == null || payload.length == 0) return null;
         try {
-            ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
-            if (in.remaining() < 6 || Short.toUnsignedInt(in.getShort()) != 1) return null;
-            long count = Integer.toUnsignedLong(in.getInt());
+            ProtocolReader in = new ProtocolReader(payload);
+            if (in.remaining() < 6 || in.uint16() != 1) return null;
+            long count = in.uint32();
             if (count > 100000) return null;
             SpannableStringBuilder output = new SpannableStringBuilder();
             for (long i = 0; i < count; i++) {
-                final String spanText = readRequiredString(in), link = readRequiredString(in);
+                final String spanText = in.requiredString(), link = in.requiredString();
                 if (in.remaining() < 12) return null;
-                float size = in.getFloat(); int weight = Short.toUnsignedInt(in.getShort()); int flags = Byte.toUnsignedInt(in.get()); boolean hasColor = in.get() != 0;
-                int red = Byte.toUnsignedInt(in.get()), green = Byte.toUnsignedInt(in.get()), blue = Byte.toUnsignedInt(in.get()), alpha = Byte.toUnsignedInt(in.get());
+                float size = in.float32(); int weight = in.uint16(); int flags = in.uint8(); boolean hasColor = in.uint8() != 0;
+                int red = in.uint8(), green = in.uint8(), blue = in.uint8(), alpha = in.uint8();
                 int color = android.graphics.Color.argb(alpha, red, green, blue);
                 int start = output.length(); output.append(spanText); int end = output.length();
                 if (size > 0) {
@@ -816,16 +814,16 @@ public final class MainActivity extends Activity {
         if (old != null) old.dispose();
         gestureBindings.remove(nodeID);
         if (payload == null || payload.length < 4) return;
-        ByteBuffer in = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
+        ProtocolReader in = new ProtocolReader(payload);
         ArrayList<GestureSpec> gestures = new ArrayList<>();
-        int gestureCount = in.getInt();
+        int gestureCount = in.int32();
         for (int i = 0; i < gestureCount && in.remaining() >= 26; i++) {
             GestureSpec spec = new GestureSpec();
-            spec.kind = Byte.toUnsignedInt(in.get());
-            spec.direction = Byte.toUnsignedInt(in.get());
-            spec.minimumPressNanos = in.getLong();
-            spec.minimumTravel = in.getFloat();
-            spec.handler = in.getLong();
+            spec.kind = in.uint8();
+            spec.direction = in.uint8();
+            spec.minimumPressNanos = in.int64();
+            spec.minimumTravel = in.float32();
+            spec.handler = in.int64();
             gestures.add(spec);
         }
         if (!gestures.isEmpty()) {
@@ -835,17 +833,17 @@ public final class MainActivity extends Activity {
         } else view.setOnTouchListener(null);
 
         if (in.remaining() < 4) return;
-        int animationCount = in.getInt();
+        int animationCount = in.int32();
         ArrayList<Animator> animations = new ArrayList<>();
         for (int i = 0; i < animationCount && in.remaining() >= 42; i++) {
-            int property = Byte.toUnsignedInt(in.get());
-            long durationNanos = in.getLong();
-            long delayNanos = in.getLong();
-            int curve = Byte.toUnsignedInt(in.get());
-            float damping = in.getFloat();
-            float velocity = in.getFloat();
-            boolean reduceMotionOK = in.get() != 0;
-            float from = in.getFloat(), to = in.getFloat(), fromX = in.getFloat(), fromY = in.getFloat(), toX = in.getFloat(), toY = in.getFloat();
+            int property = in.uint8();
+            long durationNanos = in.int64();
+            long delayNanos = in.int64();
+            int curve = in.uint8();
+            float damping = in.float32();
+            float velocity = in.float32();
+            boolean reduceMotionOK = in.uint8() != 0;
+            float from = in.float32(), to = in.float32(), fromX = in.float32(), fromY = in.float32(), toX = in.float32(), toY = in.float32();
             Animator animator = makeAnimator(view, property, from, to, fromX, fromY, toX, toY);
             if (animator == null) continue;
             animator.setDuration(Math.max(0, durationNanos / 1000000L));
@@ -922,21 +920,4 @@ public final class MainActivity extends Activity {
         if (view != null && view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
     }
 
-    private static String readString(ByteBuffer in) {
-        if (in.remaining() < 4) return "";
-        int length = in.getInt();
-        if (length <= 0 || in.remaining() < length) return "";
-        byte[] bytes = new byte[length];
-        in.get(bytes);
-        return new String(bytes, StandardCharsets.UTF_8);
-    }
-
-    private static String readRequiredString(ByteBuffer in) {
-        if (in.remaining() < 4) throw new IllegalArgumentException("missing string length");
-        int length = in.getInt();
-        if (length < 0 || length > 1048576 || length > in.remaining()) throw new IllegalArgumentException("invalid string length");
-        byte[] bytes = new byte[length];
-        in.get(bytes);
-        return new String(bytes, StandardCharsets.UTF_8);
-    }
 }

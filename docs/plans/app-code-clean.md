@@ -11,8 +11,10 @@ Branch: `feat/v1/app_code_clean`
 - [x] Extract bounded little-endian reading into `GNProtocolReader` and compile it
   through framework simulator/device build paths.
 - [x] Extract the iOS integer-keyed native registry and lifecycle runtime host.
-- [ ] Split iOS control styling and native measurement.
-- [ ] Split Android decoder, registry, controls, measurement, and runtime host.
+- [x] Extract iOS native measurement into `GNMeasurementHost`.
+- [ ] Split iOS control creation and styling.
+- [x] Extract Android bounded protocol reading into an app-neutral runtime package.
+- [ ] Split Android registry, controls, measurement, and runtime host.
 - [ ] Build and consume XCFramework/AAR artifacts.
 - [ ] Reduce generated projects and regenerate `examples/my-project`.
 
