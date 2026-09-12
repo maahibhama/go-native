@@ -13,7 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-native/go-native/examples/counter"
+	"github.com/go-native/go-native/internal/frameworktest"
 	gnruntime "github.com/go-native/go-native/runtime"
 	"github.com/go-native/go-native/runtime/layout"
 	"github.com/go-native/go-native/ui"
@@ -76,7 +76,7 @@ var appRuntime *gnruntime.Runtime
 
 //export GoNativeStart
 func GoNativeStart() {
-	appRuntime = gnruntime.New(counter.App, iosRenderer{})
+	appRuntime = gnruntime.New(frameworktest.App, iosRenderer{})
 	appRuntime.SetLayoutProvider(&layout.Pipeline{Measurer: iosNativeMeasurer{}, Cache: layout.NewMeasurementCache()})
 	if err := appRuntime.Start(); err != nil {
 		panic(err)

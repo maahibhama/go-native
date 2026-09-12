@@ -67,7 +67,7 @@ move toward that design instead of adding more renderer source to application te
 ### 4. Tooling and applications
 
 - `cmd/gonative/` — CLI and generated project templates.
-- `examples/counter/` — framework development bridge.
+- `internal/frameworktest/` — private framework development and benchmark bridge.
 - `examples/showcase-app/` — checked-in generated application fixture.
 
 `cmd/gonative/templates.go` is generated-project source embedded as Go strings. Native protocol changes therefore have four synchronization surfaces: framework iOS, framework Android, templates, and `examples/showcase-app`.

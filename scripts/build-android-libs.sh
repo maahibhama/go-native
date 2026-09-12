@@ -31,7 +31,7 @@ for abi in $ABIS; do
     CGO_CFLAGS="--sysroot=$TOOLCHAIN/sysroot -I$TOOLCHAIN/sysroot/usr/include" \
     GOCACHE=${GOCACHE:-/tmp/go-native-gocache} \
     GOPATH=${GOPATH:-/tmp/go-native-gopath} \
-    go build -ldflags "$LDFLAGS" -buildmode=c-shared -o "$LIB_BUILD/$abi/libgonative.so" ./examples/counter/androidbridge
+    go build -ldflags "$LDFLAGS" -buildmode=c-shared -o "$LIB_BUILD/$abi/libgonative.so" ./internal/frameworktest/androidbridge
     rm -f "$LIB_BUILD/$abi/libgonative.h"
 done
 IFS=$old_ifs

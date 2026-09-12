@@ -1,5 +1,6 @@
-// Package counter is the Milestone 0 application written entirely in Go.
-package counter
+// Package frameworktest provides the private application used to exercise the
+// framework's native development hosts and benchmarks.
+package frameworktest
 
 import (
 	"fmt"
@@ -10,7 +11,7 @@ var count = ui.NewState(0)
 var name = ui.NewState("")
 var enabled = ui.NewState(true)
 
-// App builds the counter's native UI tree.
+// App builds the framework test UI tree.
 func App() ui.Component {
 	return ui.SafeArea(
 		ui.Column(

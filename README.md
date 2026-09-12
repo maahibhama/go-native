@@ -162,5 +162,5 @@ See [docs/performance.md](docs/performance.md) for benchmark baselines and [docs
 - [`platform/ios/`](./platform/ios): Objective-C UIKit host and renderer.
 - [`platform/android/`](./platform/android): Java Android Views host, GapDrawable, and Gradle build harness.
 - [`cmd/gonative/`](./cmd/gonative): Developer CLI (`init`, `doctor`, `build`, `run`, `benchmark native`).
-- [`examples/counter/`](./examples/counter): Interactive counter demo application and cgo/JNI bridge entrypoints.
+- [`examples/showcase-app/`](./examples/showcase-app): Generated application showing the clean end-user project structure.
 - [`docs/`](./docs): Architectural decision records (ADRs), roadmap, performance baselines, and diagnostics guides.

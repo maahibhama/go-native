@@ -33,7 +33,7 @@ For implementation work in this repository, load the project skill at [`.agents/
 - `platform/android/src/dev/gonative/counter/MainActivity.java`: Android decoder and renderer.
 - `cmd/gonative/main.go`: CLI dispatch, toolchain doctor, standalone builds.
 - `cmd/gonative/templates.go`: generated standalone project sources. Changes to platform bridges or renderers often need matching template changes.
-- `examples/counter/`: framework demo bridge.
+- `internal/frameworktest/`: private application and bridges used by native framework builds and benchmarks.
 - `examples/showcase-app/`: checked-in generated-project fixture; keep it aligned with scaffolding when generator behavior changes.
 - `runtime/inspector/`: loopback-only, read-only diagnostic HTTP service.
 
