@@ -178,6 +178,41 @@ func (r *Runtime) Stop() {
 	r.diagnostics.Record(LogEntry{Kind: LogRuntimeStopped})
 }
 
+// Reload discards mounted component state, handlers, effects, and geometry, then
+// commits a fresh application tree through the existing renderer connection.
+// Reload-state hooks restore their explicitly persisted values independently.
+func (r *Runtime) Reload() error {
+	r.mu.Lock()
+	if r.stopped {
+		r.mu.Unlock()
+		return nil
+	}
+	oldHooks := r.hooks
+	if resetter, ok := r.renderer.(interface{ ResetTree() error }); ok {
+		if err := resetter.ResetTree(); err != nil {
+			r.mu.Unlock()
+			return err
+		}
+	} else if r.tree != nil {
+		batch := Reconcile(r.tree, nil)
+		if len(batch.Mutations) > 0 {
+			batch.Sequence = r.sequence.Add(1)
+			if err := r.renderer.Apply(batch); err != nil {
+				r.mu.Unlock()
+				return err
+			}
+		}
+	}
+	r.releaseRemovedHandlers(r.tree, nil)
+	r.tree = nil
+	r.geometry = nil
+	r.hooks = ui.NewHookRegistry(r)
+	r.mu.Unlock()
+	oldHooks.Dispose()
+	ui.SetScheduler(r)
+	return r.render()
+}
+
 // Schedule coalesces synchronous/re-entrant updates. Rendering is serialized.
 func (r *Runtime) Schedule() {
 	r.mu.Lock()

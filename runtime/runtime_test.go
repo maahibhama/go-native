@@ -446,3 +446,37 @@ func TestRuntimeOwnsHookStateAndEffectCleanup(t *testing.T) {
 		t.Fatalf("cleanups = %d", cleanups)
 	}
 }
+
+func TestRuntimeReloadResetsOrdinaryHookStateAndEffects(t *testing.T) {
+	renderer := &recordingRenderer{}
+	var count *ui.State[int]
+	effectRuns, cleanups := 0, 0
+	r := NewContext(func(ui.BuildContext) ui.Component {
+		return ui.Functional("reload", func(ctx ui.BuildContext) ui.Component {
+			count = ui.UseState(ctx, 3)
+			ui.UseEffect(ctx, func(context.Context) ui.Cleanup {
+				effectRuns++
+				return func() { cleanups++ }
+			})
+			return ui.Text(string(rune('0' + count.Get())))
+		})
+	}, renderer, ui.DefaultEnvironment())
+	if err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	count.Set(7)
+	deadline := time.Now().Add(time.Second)
+	for count.Get() != 7 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if err := r.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if count.Get() != 3 {
+		t.Fatalf("state after reload = %d", count.Get())
+	}
+	if effectRuns != 2 || cleanups != 1 {
+		t.Fatalf("effect runs=%d cleanups=%d", effectRuns, cleanups)
+	}
+	r.Stop()
+}

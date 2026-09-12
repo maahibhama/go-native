@@ -28,6 +28,16 @@ selected JSON values under that session and restores them before the next initia
 render. Arbitrary Go memory, effects, native handles, focus, and keyboard state are
 intentionally not reflected or restored.
 
+## Virtual Reload transport
+
+The virtual-reload foundation uses `runtime/devtransport`, a debug-only,
+authenticated, length-prefixed little-endian transport. It envelopes unchanged
+mutation and measurement protocol payloads and assigns every frame to a monotonic
+worker generation. `runtime.RemoteRenderer` sends mutation batches and reset-tree
+commands; `layout.RemoteMeasurer` provides multiplexed native measurement RPC.
+`Runtime.Reload` clears mounted hooks, effects, handlers, and geometry before a
+fresh complete render while leaving its renderer connection alive.
+
 `gonative dev start` provides an interactive terminal controller. Use `i` or
 `a` to select and launch a platform, `r` to force a reload, `d` to run toolchain
 diagnostics, and `q` to stop the controller. Source changes automatically reload
