@@ -39,6 +39,8 @@ commands; `layout.RemoteMeasurer` provides multiplexed native measurement RPC.
 fresh complete render while leaving its renderer connection alive.
 
 `gonative dev start` provides an interactive terminal controller. Use `i` or
-`a` to select and launch a platform, `r` to force a reload, `d` to run toolchain
-diagnostics, and `q` to stop the controller. Source changes automatically reload
-the most recently selected platform.
+`a` to select and launch a platform, `r` for virtual reload, `R` or `b` for a
+full native rebuild, `c` to clear reload state, `d` for toolchain diagnostics,
+`p` for protocol/target status, `o` for the inspector, and `q` to stop. Until a
+native shell establishes the virtual transport, `r` reports and uses the embedded
+rebuild fallback rather than claiming an in-process reload.

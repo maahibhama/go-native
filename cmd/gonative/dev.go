@@ -15,6 +15,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	gnruntime "github.com/go-native/go-native/runtime"
+	"github.com/go-native/go-native/runtime/devtransport"
 )
 
 const devPollInterval = 200 * time.Millisecond
@@ -40,6 +43,7 @@ func devStartCommand(root string, runner commandRunner, input io.Reader, stdout,
 	printDevMenu(stdout)
 	activePlatform := ""
 	builtPlatforms := make(map[string]bool)
+	generations := make(map[string]uint64)
 	for {
 		select {
 		case <-ctx.Done():
@@ -53,18 +57,42 @@ func devStartCommand(root string, runner commandRunner, input io.Reader, stdout,
 				if runDevPlatform(root, "ios", builtPlatforms["ios"], runner, stdout, stderr) {
 					activePlatform = "ios"
 					builtPlatforms["ios"] = true
+					generations["ios"]++
 				}
 			case "android":
 				if runDevPlatform(root, "android", builtPlatforms["android"], runner, stdout, stderr) {
 					activePlatform = "android"
 					builtPlatforms["android"] = true
+					generations["android"]++
 				}
 			case "reload":
 				if activePlatform == "" {
 					fmt.Fprintln(stdout, "No active platform. Press i for iOS or a for Android first.")
 				} else {
-					runDevPlatform(root, activePlatform, builtPlatforms[activePlatform], runner, stdout, stderr)
+					fmt.Fprintln(stdout, "Virtual Reload: no native-shell connection; using rebuild fallback")
+					if runDevPlatform(root, activePlatform, builtPlatforms[activePlatform], runner, stdout, stderr) {
+						generations[activePlatform]++
+					}
 				}
+			case "rebuild":
+				if activePlatform == "" {
+					fmt.Fprintln(stdout, "No active platform. Press i for iOS or a for Android first.")
+				} else if runDevPlatform(root, activePlatform, false, runner, stdout, stderr) {
+					builtPlatforms[activePlatform] = true
+					generations[activePlatform]++
+				}
+			case "clear":
+				if _, err := loadDevSession(root, true); err != nil {
+					fmt.Fprintln(stderr, "Clear reload state:", err)
+				} else if activePlatform == "" {
+					fmt.Fprintln(stdout, "Reload state cleared. Select a platform to start a fresh session.")
+				} else if runDevPlatform(root, activePlatform, builtPlatforms[activePlatform], runner, stdout, stderr) {
+					generations[activePlatform]++
+				}
+			case "status":
+				printDevStatus(stdout, activePlatform, builtPlatforms, generations)
+			case "inspector":
+				fmt.Fprintln(stdout, "Inspector: waiting for the virtual-runtime worker connection")
 			case "doctor":
 				if err := doctor(root, stdout); err != nil {
 					fmt.Fprintln(stderr, "doctor:", err)
@@ -96,15 +124,27 @@ func readDevCommands(ctx context.Context, input io.Reader, commands chan<- strin
 }
 
 func parseDevCommand(input string) string {
-	switch strings.ToLower(strings.TrimSpace(input)) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "R" {
+		return "rebuild"
+	}
+	switch strings.ToLower(trimmed) {
 	case "i", "ios":
 		return "ios"
 	case "a", "android":
 		return "android"
 	case "r", "reload":
 		return "reload"
+	case "b", "build", "rebuild":
+		return "rebuild"
+	case "c", "clear":
+		return "clear"
 	case "d", "doctor":
 		return "doctor"
+	case "p", "status":
+		return "status"
+	case "o", "open", "inspector":
+		return "inspector"
 	case "q", "quit", "exit":
 		return "quit"
 	default:
@@ -115,9 +155,27 @@ func parseDevCommand(input string) string {
 func printDevMenu(output io.Writer) {
 	fmt.Fprintln(output, "  i  run iOS Simulator")
 	fmt.Fprintln(output, "  a  run Android emulator")
-	fmt.Fprintln(output, "  r  reload the active platform")
+	fmt.Fprintln(output, "  r  virtual reload connected targets (rebuild fallback until connected)")
+	fmt.Fprintln(output, "  R/b rebuild and reinstall the active native shell")
+	fmt.Fprintln(output, "  c  clear reload state and reload")
 	fmt.Fprintln(output, "  d  run doctor")
+	fmt.Fprintln(output, "  p  print connection and protocol status")
+	fmt.Fprintln(output, "  o  open inspector when a worker is connected")
 	fmt.Fprintln(output, "  q  quit")
+}
+
+func printDevStatus(output io.Writer, active string, built map[string]bool, generations map[string]uint64) {
+	if active == "" {
+		active = "none"
+	}
+	fmt.Fprintf(output, "Development status: active=%s transport=v%d mutation=v%d\n", active, devtransport.Version, gnruntime.ProtocolVersion())
+	for _, platform := range []string{"ios", "android"} {
+		state := "not built"
+		if built[platform] {
+			state = "installed; embedded fallback"
+		}
+		fmt.Fprintf(output, "  %s: %s, generation=%d\n", platform, state, generations[platform])
+	}
 }
 
 func runDevPlatform(root, platform string, skipFramework bool, runner commandRunner, stdout, stderr io.Writer) bool {

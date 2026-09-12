@@ -84,7 +84,7 @@ func TestLoadDevSessionReusesAndResets(t *testing.T) {
 }
 
 func TestParseDevCommand(t *testing.T) {
-	tests := map[string]string{"i": "ios", "IOS": "ios", "a": "android", "r": "reload", "d": "doctor", "q": "quit", "unknown": "help"}
+	tests := map[string]string{"i": "ios", "IOS": "ios", "a": "android", "r": "reload", "R": "rebuild", "b": "rebuild", "c": "clear", "d": "doctor", "p": "status", "o": "inspector", "q": "quit", "unknown": "help"}
 	for input, want := range tests {
 		if got := parseDevCommand(input); got != want {
 			t.Errorf("parseDevCommand(%q) = %q, want %q", input, got, want)

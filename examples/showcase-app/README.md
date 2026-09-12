@@ -28,7 +28,8 @@ gonative dev android
 ```
 
 The interactive development server accepts `i` for iOS, `a` for Android, `r`
-to reload the active platform, `d` for doctor, and `q` to quit.
+for virtual reload, `R` or `b` for a native rebuild, `c` to clear state, `d`
+for doctor, `p` for status, `o` for inspector, and `q` to quit.
 
 Use `ui.UseReloadState` for JSON-serializable state that should survive Fast
 Reload relaunches. Ordinary `ui.UseState` intentionally starts fresh.
