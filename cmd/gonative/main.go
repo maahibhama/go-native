@@ -19,6 +19,7 @@ Usage:
   gonative init <name>
   gonative build <ios|ios-device|android>
   gonative run <ios|android>
+  gonative dev start
   gonative dev <ios|android> [--reset-state]
   gonative benchmark native <ios|android>
   gonative doctor
@@ -95,6 +96,9 @@ func run(args []string, runner commandRunner, stdout, stderr io.Writer) error {
 		}
 		return platformCommand(root, args[0], args[1], runner, stdout, stderr)
 	case "dev":
+		if len(args) == 2 && args[1] == "start" {
+			return devStartCommand(root, runner, os.Stdin, stdout, stderr)
+		}
 		if len(args) < 2 || len(args) > 3 || (len(args) == 3 && args[2] != "--reset-state") {
 			return fmt.Errorf("dev requires one platform and optional --reset-state\n\n%s", usage)
 		}

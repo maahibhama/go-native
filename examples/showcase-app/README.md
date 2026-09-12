@@ -22,9 +22,13 @@ gonative build android
 gonative run android
 
 # Watch Go source and automatically rebuild/relaunch
+gonative dev start
 gonative dev ios
 gonative dev android
 ```
+
+The interactive development server accepts `i` for iOS, `a` for Android, `r`
+to reload the active platform, `d` for doctor, and `q` to quit.
 
 Use `ui.UseReloadState` for JSON-serializable state that should survive Fast
 Reload relaunches. Ordinary `ui.UseState` intentionally starts fresh.

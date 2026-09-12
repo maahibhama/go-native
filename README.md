@@ -91,6 +91,7 @@ gonative run ios
 gonative run android
 
 # Start Fast Reload on a simulator or emulator
+gonative dev start
 gonative dev ios
 gonative dev android
 

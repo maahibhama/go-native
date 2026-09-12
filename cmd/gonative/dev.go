@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -19,6 +20,130 @@ import (
 const devPollInterval = 200 * time.Millisecond
 
 type sourceSnapshot map[string][32]byte
+
+func devStartCommand(root string, runner commandRunner, input io.Reader, stdout, stderr io.Writer) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	commands := make(chan string)
+	go readDevCommands(ctx, input, commands)
+	changes := make(chan []string, 1)
+	go func() {
+		_ = watchSources(ctx, root, devPollInterval, func(paths []string) {
+			select {
+			case changes <- paths:
+			default:
+			}
+		})
+	}()
+
+	fmt.Fprintln(stdout, "Go Native development server")
+	printDevMenu(stdout)
+	activePlatform := ""
+	builtPlatforms := make(map[string]bool)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case command, ok := <-commands:
+			if !ok {
+				return nil
+			}
+			switch parseDevCommand(command) {
+			case "ios":
+				if runDevPlatform(root, "ios", builtPlatforms["ios"], runner, stdout, stderr) {
+					activePlatform = "ios"
+					builtPlatforms["ios"] = true
+				}
+			case "android":
+				if runDevPlatform(root, "android", builtPlatforms["android"], runner, stdout, stderr) {
+					activePlatform = "android"
+					builtPlatforms["android"] = true
+				}
+			case "reload":
+				if activePlatform == "" {
+					fmt.Fprintln(stdout, "No active platform. Press i for iOS or a for Android first.")
+				} else {
+					runDevPlatform(root, activePlatform, builtPlatforms[activePlatform], runner, stdout, stderr)
+				}
+			case "doctor":
+				if err := doctor(root, stdout); err != nil {
+					fmt.Fprintln(stderr, "doctor:", err)
+				}
+			case "quit":
+				return nil
+			case "help":
+				printDevMenu(stdout)
+			}
+		case paths := <-changes:
+			if activePlatform != "" {
+				fmt.Fprintf(stdout, "Fast Reload: %s changed\n", strings.Join(paths, ", "))
+				runDevPlatform(root, activePlatform, builtPlatforms[activePlatform], runner, stdout, stderr)
+			}
+		}
+	}
+}
+
+func readDevCommands(ctx context.Context, input io.Reader, commands chan<- string) {
+	defer close(commands)
+	scanner := bufio.NewScanner(input)
+	for scanner.Scan() {
+		select {
+		case commands <- scanner.Text():
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func parseDevCommand(input string) string {
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "i", "ios":
+		return "ios"
+	case "a", "android":
+		return "android"
+	case "r", "reload":
+		return "reload"
+	case "d", "doctor":
+		return "doctor"
+	case "q", "quit", "exit":
+		return "quit"
+	default:
+		return "help"
+	}
+}
+
+func printDevMenu(output io.Writer) {
+	fmt.Fprintln(output, "  i  run iOS Simulator")
+	fmt.Fprintln(output, "  a  run Android emulator")
+	fmt.Fprintln(output, "  r  reload the active platform")
+	fmt.Fprintln(output, "  d  run doctor")
+	fmt.Fprintln(output, "  q  quit")
+}
+
+func runDevPlatform(root, platform string, skipFramework bool, runner commandRunner, stdout, stderr io.Writer) bool {
+	session, err := loadDevSession(root, false)
+	if err != nil {
+		fmt.Fprintln(stderr, "Fast Reload:", err)
+		return false
+	}
+	previousSession, hadSession := os.LookupEnv("GONATIVE_RELOAD_SESSION")
+	previousSkip, hadSkip := os.LookupEnv("GONATIVE_SKIP_FRAMEWORK_BUILD")
+	defer restoreEnv("GONATIVE_RELOAD_SESSION", previousSession, hadSession)
+	defer restoreEnv("GONATIVE_SKIP_FRAMEWORK_BUILD", previousSkip, hadSkip)
+	_ = os.Setenv("GONATIVE_RELOAD_SESSION", session)
+	if skipFramework {
+		_ = os.Setenv("GONATIVE_SKIP_FRAMEWORK_BUILD", "1")
+	} else {
+		_ = os.Unsetenv("GONATIVE_SKIP_FRAMEWORK_BUILD")
+	}
+	started := time.Now()
+	if err := platformCommand(root, "run", platform, runner, stdout, stderr); err != nil {
+		fmt.Fprintf(stderr, "Fast Reload failed (last app kept running): %v\n", err)
+		return false
+	}
+	fmt.Fprintf(stdout, "Fast Reload complete (%s) in %s\n", platform, time.Since(started).Round(time.Millisecond))
+	return true
+}
 
 func devCommand(root, platform string, reset bool, runner commandRunner, stdout, stderr io.Writer) error {
 	if platform != "ios" && platform != "android" {

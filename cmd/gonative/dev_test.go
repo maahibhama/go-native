@@ -83,6 +83,15 @@ func TestLoadDevSessionReusesAndResets(t *testing.T) {
 	}
 }
 
+func TestParseDevCommand(t *testing.T) {
+	tests := map[string]string{"i": "ios", "IOS": "ios", "a": "android", "r": "reload", "d": "doctor", "q": "quit", "unknown": "help"}
+	for input, want := range tests {
+		if got := parseDevCommand(input); got != want {
+			t.Errorf("parseDevCommand(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func writeTestFile(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

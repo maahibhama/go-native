@@ -27,3 +27,8 @@ a session ID to the generated Go bridge. `ui.UseReloadState` persists explicitly
 selected JSON values under that session and restores them before the next initial
 render. Arbitrary Go memory, effects, native handles, focus, and keyboard state are
 intentionally not reflected or restored.
+
+`gonative dev start` provides an interactive terminal controller. Use `i` or
+`a` to select and launch a platform, `r` to force a reload, `d` to run toolchain
+diagnostics, and `q` to stop the controller. Source changes automatically reload
+the most recently selected platform.
