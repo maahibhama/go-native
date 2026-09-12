@@ -7,6 +7,7 @@ import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
+import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ScrollView;
 
@@ -231,8 +232,7 @@ public class GoNativeActivity extends Activity implements EventDispatcher {
                     controlFactory.applyComputedFrame(nodeID, view, hasFrame, frameX, frameY, frameWidth, frameHeight, nodeID == registry.getRootNodeID());
                     controlFactory.applyInteractions(nodeID, view, interactions);
                     if (registry.viewCount() == 1) {
-                        view.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-                        view.setBackgroundColor(android.graphics.Color.WHITE);
+                        fillRoot(view);
                         setContentView(view);
                     }
                 } else if (mutation == UPDATE) {
@@ -241,6 +241,7 @@ public class GoNativeActivity extends Activity implements EventDispatcher {
                         controlFactory.applyTypedStyle(view, typedStyle);
                         controlFactory.applyComputedFrame(nodeID, view, hasFrame, frameX, frameY, frameWidth, frameHeight, nodeID == registry.getRootNodeID());
                         controlFactory.applyInteractions(nodeID, view, interactions);
+                        if (nodeID == registry.getRootNodeID()) fillRoot(view);
                     }
                 } else if (mutation == INSERT) {
                     View parentView = registry.getView(parentID);
@@ -279,5 +280,18 @@ public class GoNativeActivity extends Activity implements EventDispatcher {
         } catch (Throwable t) {
             Log.e("GoNative", "Error applying mutation batch", t);
         }
+    }
+
+    private void fillRoot(View view) {
+        ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (params == null) {
+            params = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT);
+        } else {
+            params.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            params.height = ViewGroup.LayoutParams.MATCH_PARENT;
+        }
+        view.setLayoutParams(params);
     }
 }
