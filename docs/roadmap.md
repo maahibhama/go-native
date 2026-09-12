@@ -74,7 +74,7 @@ Every primitive requires typed props, reconciliation and protocol tests, both na
 - [x] Conventional Android Gradle/AndroidX project, vendored wrapper, and multi-ABI packaging ([ ] offline dependency cache)
 - [x] Explicit iOS physical-device compile and signing workflow
 - [ ] Component/event logging and UI tree inspector
-- [ ] Source reload investigation
+- [x] Simulator/emulator Fast Reload with opt-in state restoration
 - [x] Native timing JSONL collection harness ([ ] controlled interaction automation)
 
 ## Future platforms

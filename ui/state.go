@@ -27,6 +27,7 @@ type State[T any] struct {
 	mu        sync.RWMutex
 	value     T
 	scheduler Scheduler
+	onChange  func(T)
 }
 
 // NewState creates state with an initial value.
@@ -36,17 +37,35 @@ func newScheduledState[T any](value T, scheduler Scheduler) *State[T] {
 	return &State[T]{value: value, scheduler: scheduler}
 }
 
+func newObservedState[T any](value T, scheduler Scheduler, onChange func(T)) *State[T] {
+	return &State[T]{value: value, scheduler: scheduler, onChange: onChange}
+}
+
 // Get returns the current value.
 func (s *State[T]) Get() T { s.mu.RLock(); defer s.mu.RUnlock(); return s.value }
 
 // Set replaces the value and schedules a rendering pass.
-func (s *State[T]) Set(value T) { s.mu.Lock(); s.value = value; s.mu.Unlock(); s.schedule() }
+func (s *State[T]) Set(value T) {
+	s.mu.Lock()
+	s.value = value
+	onChange := s.onChange
+	s.mu.Unlock()
+	if onChange != nil {
+		onChange(value)
+	}
+	s.schedule()
+}
 
 // Update atomically replaces the value using update and schedules a rendering pass.
 func (s *State[T]) Update(update func(T) T) {
 	s.mu.Lock()
 	s.value = update(s.value)
+	value := s.value
+	onChange := s.onChange
 	s.mu.Unlock()
+	if onChange != nil {
+		onChange(value)
+	}
 	s.schedule()
 }
 

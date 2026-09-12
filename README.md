@@ -90,6 +90,10 @@ gonative run ios
 # Build & run on Android device / emulator
 gonative run android
 
+# Start Fast Reload on a simulator or emulator
+gonative dev ios
+gonative dev android
+
 # Build for physical iOS device (requires signing identity & profile)
 GONATIVE_IOS_SIGNING_IDENTITY="Apple Development: Name (TEAMID)" \
 GONATIVE_IOS_PROVISIONING_PROFILE=/path/to/profile.mobileprovision \
@@ -115,7 +119,7 @@ import (
 
 func App() ui.Component {
 	return ui.Functional("counter", func(ctx ui.BuildContext) ui.Component {
-		count := ui.UseState(ctx, 0)
+		count := ui.UseReloadState(ctx, "count", 0)
 		return ui.SafeArea(
 			ui.Column(
 				ui.Text("Go Native").FontSize(32).Bold(),
@@ -161,6 +165,6 @@ See [docs/performance.md](docs/performance.md) for benchmark baselines and [docs
 - [`runtime/inspector/`](./runtime/inspector): Loopback HTTP diagnostic server (`GET /v1/tree`, `GET /v1/logs`).
 - [`platform/ios/`](./platform/ios): Objective-C UIKit host and renderer.
 - [`platform/android/`](./platform/android): Java Android Views host, GapDrawable, and Gradle build harness.
-- [`cmd/gonative/`](./cmd/gonative): Developer CLI (`init`, `doctor`, `build`, `run`, `benchmark native`).
+- [`cmd/gonative/`](./cmd/gonative): Developer CLI (`init`, `doctor`, `build`, `run`, `dev`, `benchmark native`).
 - [`examples/showcase-app/`](./examples/showcase-app): Generated application showing the clean end-user project structure.
 - [`docs/`](./docs): Architectural decision records (ADRs), roadmap, performance baselines, and diagnostics guides.

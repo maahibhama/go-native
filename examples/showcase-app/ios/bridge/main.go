@@ -16,12 +16,15 @@ import (
 	gnruntime "github.com/go-native/go-native/runtime"
 	"github.com/go-native/go-native/runtime/layout"
 	"github.com/go-native/go-native/ui"
+	"os"
+	"path/filepath"
 	"showcase-app"
 	"time"
 	"unsafe"
 )
 
 var benchmarkOutput string
+var goNativeReloadSession string
 
 type iosRenderer struct{}
 
@@ -74,11 +77,23 @@ var appRuntime *gnruntime.Runtime
 
 //export GoNativeStart
 func GoNativeStart() {
+	configureReloadState()
 	appRuntime = gnruntime.New(app.App, iosRenderer{})
 	appRuntime.SetLayoutProvider(&layout.Pipeline{Measurer: iosNativeMeasurer{}, Cache: layout.NewMeasurementCache()})
 	if err := appRuntime.Start(); err != nil {
 		panic(err)
 	}
+}
+
+func configureReloadState() {
+	if goNativeReloadSession == "" {
+		return
+	}
+	directory, err := os.UserCacheDir()
+	if err != nil {
+		directory = os.TempDir()
+	}
+	ui.ConfigureReloadState(ui.ReloadStateOptions{Path: filepath.Join(directory, "go-native", "reload-state.json"), SessionID: goNativeReloadSession, OnWarning: func(message string) { fmt.Println("Go Native Fast Reload:", message) }})
 }
 
 //export GoNativeSetViewport

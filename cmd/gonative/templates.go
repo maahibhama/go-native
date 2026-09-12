@@ -571,11 +571,14 @@ import (
 	"github.com/go-native/go-native/runtime/layout"
 	"github.com/go-native/go-native/ui"
 	"%s"
+	"os"
+	"path/filepath"
 	"time"
 	"unsafe"
 )
 
 var benchmarkOutput string
+var goNativeReloadSession string
 
 type iosRenderer struct{}
 
@@ -628,11 +631,23 @@ var appRuntime *gnruntime.Runtime
 
 //export GoNativeStart
 func GoNativeStart() {
+	configureReloadState()
 	appRuntime = gnruntime.New(app.App, iosRenderer{})
 	appRuntime.SetLayoutProvider(&layout.Pipeline{Measurer: iosNativeMeasurer{}, Cache: layout.NewMeasurementCache()})
 	if err := appRuntime.Start(); err != nil {
 		panic(err)
 	}
+}
+
+func configureReloadState() {
+	if goNativeReloadSession == "" {
+		return
+	}
+	directory, err := os.UserCacheDir()
+	if err != nil {
+		directory = os.TempDir()
+	}
+	ui.ConfigureReloadState(ui.ReloadStateOptions{Path: filepath.Join(directory, "go-native", "reload-state.json"), SessionID: goNativeReloadSession, OnWarning: func(message string) { fmt.Println("Go Native Fast Reload:", message) }})
 }
 
 //export GoNativeSetViewport
@@ -859,10 +874,12 @@ for abi in $ABIS; do
     mkdir -p "$LIB_BUILD/$abi"
     (
         cd "$ROOT"
+        reload_ldflags=
+        if [ -n "${GONATIVE_RELOAD_SESSION:-}" ]; then reload_ldflags="-X main.goNativeReloadSession=$GONATIVE_RELOAD_SESSION"; fi
         CGO_ENABLED=1 GOOS=android GOARCH="$goarch" \
         CC="$TOOLCHAIN/bin/$compiler" \
         CGO_CFLAGS="--sysroot=$TOOLCHAIN/sysroot -I$TOOLCHAIN/sysroot/usr/include" \
-        go build -buildmode=c-shared -o "$LIB_BUILD/$abi/libgonative.so" ./android/bridge
+        go build -ldflags "$reload_ldflags" -buildmode=c-shared -o "$LIB_BUILD/$abi/libgonative.so" ./android/bridge
     )
     rm -f "$LIB_BUILD/$abi/libgonative.h"
 done
@@ -940,9 +957,12 @@ import (
 	"github.com/go-native/go-native/runtime/layout"
 	"github.com/go-native/go-native/ui"
 	"%s"
+	"os"
+	"path/filepath"
 )
 
 var benchmarkOutput string
+var goNativeReloadSession string
 
 type androidRenderer struct{}
 
@@ -985,12 +1005,24 @@ var appRuntime *gnruntime.Runtime
 
 //export GoNativeAndroidStart
 func GoNativeAndroidStart() {
+	configureReloadState()
 	renderer := androidRenderer{}
 	appRuntime = gnruntime.New(app.App, renderer)
 	appRuntime.SetLayoutProvider(&layout.Pipeline{Measurer: renderer, Cache: layout.NewMeasurementCache()})
 	if err := appRuntime.Start(); err != nil {
 		panic(err)
 	}
+}
+
+func configureReloadState() {
+	if goNativeReloadSession == "" {
+		return
+	}
+	directory, err := os.UserCacheDir()
+	if err != nil {
+		directory = os.TempDir()
+	}
+	ui.ConfigureReloadState(ui.ReloadStateOptions{Path: filepath.Join(directory, "go-native", "reload-state.json"), SessionID: goNativeReloadSession, OnWarning: func(message string) { fmt.Println("Go Native Fast Reload:", message) }})
 }
 
 //export GoNativeAndroidUpdateViewport

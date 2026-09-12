@@ -19,6 +19,7 @@ Usage:
   gonative init <name>
   gonative build <ios|ios-device|android>
   gonative run <ios|android>
+  gonative dev <ios|android> [--reset-state]
   gonative benchmark native <ios|android>
   gonative doctor
   gonative help
@@ -93,6 +94,11 @@ func run(args []string, runner commandRunner, stdout, stderr io.Writer) error {
 			return fmt.Errorf("%s requires one platform\n\n%s", args[0], usage)
 		}
 		return platformCommand(root, args[0], args[1], runner, stdout, stderr)
+	case "dev":
+		if len(args) < 2 || len(args) > 3 || (len(args) == 3 && args[2] != "--reset-state") {
+			return fmt.Errorf("dev requires one platform and optional --reset-state\n\n%s", usage)
+		}
+		return devCommand(root, args[1], len(args) == 3, runner, stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command %q\n\n%s", args[0], usage)
 	}
@@ -195,13 +201,24 @@ func runStandalonePlatformCommand(root, action, platform string, runner commandR
 			return fmt.Errorf("resolve Go Native iOS framework: %w", err)
 		}
 		frameworkScript := filepath.Join(frameworkRoot, "scripts", "build-ios-framework.sh")
-		if err = runner.Run(frameworkScript, nil, frameworkRoot, env, stdout, stderr); err != nil {
-			return fmt.Errorf("build GoNativeKit: %w", err)
-		}
 		frameworkArtifact := filepath.Join(frameworkRoot, "build", "native", "GoNativeKit.xcframework")
+		skipFrameworkBuild := os.Getenv("GONATIVE_SKIP_FRAMEWORK_BUILD") == "1"
+		if !skipFrameworkBuild {
+			if err = runner.Run(frameworkScript, nil, frameworkRoot, env, stdout, stderr); err != nil {
+				return fmt.Errorf("build GoNativeKit: %w", err)
+			}
+		} else if _, err = os.Stat(frameworkArtifact); err != nil {
+			return fmt.Errorf("cached GoNativeKit is unavailable: %w", err)
+		}
 		appFramework := filepath.Join(root, "ios", ".gonative", "GoNativeKit.xcframework")
-		if err = replaceDir(frameworkArtifact, appFramework); err != nil {
-			return fmt.Errorf("install GoNativeKit Swift package artifact: %w", err)
+		if !skipFrameworkBuild {
+			if err = replaceDir(frameworkArtifact, appFramework); err != nil {
+				return fmt.Errorf("install GoNativeKit Swift package artifact: %w", err)
+			}
+		} else if _, statErr := os.Stat(appFramework); statErr != nil {
+			if err = replaceDir(frameworkArtifact, appFramework); err != nil {
+				return fmt.Errorf("restore cached GoNativeKit Swift package artifact: %w", err)
+			}
 		}
 		sdkOut, err := exec.Command("xcrun", "--sdk", "iphonesimulator", "--show-sdk-path").Output()
 		if err != nil {
@@ -214,7 +231,12 @@ func runStandalonePlatformCommand(root, action, platform string, runner commandR
 
 		cgoCC := fmt.Sprintf("clang -target arm64-apple-ios15.0-simulator -isysroot %s", sdk)
 		cgoEnv := append(env, "CGO_ENABLED=1", "GOOS=ios", "GOARCH=arm64", "CC="+cgoCC)
-		if err := runner.Run("go", []string{"build", "-buildmode=c-archive", "-o", filepath.Join(buildDir, "counter.a"), "./ios/bridge"}, root, cgoEnv, stdout, stderr); err != nil {
+		goArgs := []string{"build"}
+		if session := os.Getenv("GONATIVE_RELOAD_SESSION"); session != "" {
+			goArgs = append(goArgs, "-ldflags", "-X main.goNativeReloadSession="+session)
+		}
+		goArgs = append(goArgs, "-buildmode=c-archive", "-o", filepath.Join(buildDir, "counter.a"), "./ios/bridge")
+		if err := runner.Run("go", goArgs, root, cgoEnv, stdout, stderr); err != nil {
 			return fmt.Errorf("compile ios bridge: %w", err)
 		}
 
@@ -267,13 +289,24 @@ func runStandalonePlatformCommand(root, action, platform string, runner commandR
 			return fmt.Errorf("resolve Go Native Android runtime: %w", err)
 		}
 		frameworkScript := filepath.Join(frameworkRoot, "scripts", "build-android-runtime.sh")
-		if err = runner.Run(frameworkScript, nil, frameworkRoot, env, stdout, stderr); err != nil {
-			return fmt.Errorf("build gonative-runtime AAR: %w", err)
-		}
 		frameworkMaven := filepath.Join(frameworkRoot, "build", "native", "maven")
+		skipFrameworkBuild := os.Getenv("GONATIVE_SKIP_FRAMEWORK_BUILD") == "1"
+		if !skipFrameworkBuild {
+			if err = runner.Run(frameworkScript, nil, frameworkRoot, env, stdout, stderr); err != nil {
+				return fmt.Errorf("build gonative-runtime AAR: %w", err)
+			}
+		} else if _, err = os.Stat(frameworkMaven); err != nil {
+			return fmt.Errorf("cached gonative-runtime is unavailable: %w", err)
+		}
 		appMaven := filepath.Join(root, "android", ".gonative", "m2")
-		if err = replaceDir(frameworkMaven, appMaven); err != nil {
-			return fmt.Errorf("install gonative-runtime Maven repository: %w", err)
+		if !skipFrameworkBuild {
+			if err = replaceDir(frameworkMaven, appMaven); err != nil {
+				return fmt.Errorf("install gonative-runtime Maven repository: %w", err)
+			}
+		} else if _, statErr := os.Stat(appMaven); statErr != nil {
+			if err = replaceDir(frameworkMaven, appMaven); err != nil {
+				return fmt.Errorf("restore cached gonative-runtime Maven repository: %w", err)
+			}
 		}
 		if err := buildStandaloneAndroidLibs(root, env, runner, stdout, stderr); err != nil {
 			return err
@@ -402,7 +435,12 @@ func buildStandaloneAndroidLibs(root string, env []string, runner commandRunner,
 		cgoEnv = defaultEnv(cgoEnv, "CGO_CFLAGS", fmt.Sprintf("--sysroot=%s/sysroot -I%s/sysroot/usr/include", toolchain, toolchain))
 
 		outFile := filepath.Join(outDir, "libgonative.so")
-		if err := runner.Run("go", []string{"build", "-buildmode=c-shared", "-o", outFile, "./android/bridge"}, root, cgoEnv, stdout, stderr); err != nil {
+		goArgs := []string{"build"}
+		if session := os.Getenv("GONATIVE_RELOAD_SESSION"); session != "" {
+			goArgs = append(goArgs, "-ldflags", "-X main.goNativeReloadSession="+session)
+		}
+		goArgs = append(goArgs, "-buildmode=c-shared", "-o", outFile, "./android/bridge")
+		if err := runner.Run("go", goArgs, root, cgoEnv, stdout, stderr); err != nil {
 			return fmt.Errorf("compile android native lib for %s: %w", abi, err)
 		}
 		_ = os.Remove(filepath.Join(outDir, "libgonative.h"))

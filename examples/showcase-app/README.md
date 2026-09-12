@@ -20,7 +20,14 @@ gonative run ios
 # Build & run on Android
 gonative build android
 gonative run android
+
+# Watch Go source and automatically rebuild/relaunch
+gonative dev ios
+gonative dev android
 ```
+
+Use `ui.UseReloadState` for JSON-serializable state that should survive Fast
+Reload relaunches. Ordinary `ui.UseState` intentionally starts fresh.
 
 ## IDE Usage
 - **Xcode**: Open `ios/showcase-app.xcodeproj` in Xcode and click **Run** (Cmd+R).

@@ -1,4 +1,4 @@
-# Source reload feasibility
+# Fast Reload architecture
 
 Go does not support replacing compiled functions or package code inside a running
 iOS or Android process. A reliable first reload workflow should therefore rebuild
@@ -19,9 +19,11 @@ supported on these mobile targets and would conflict with platform code-signing
 rules. Interpreting Go or introducing a JavaScript/Lua runtime would undermine the
 project's all-Go native-rendering goal and is out of scope.
 
-Before implementation, measure rebuild, install, and relaunch latency separately.
-The watcher should live in `gonative`, remain opt-in, ignore generated build output,
-cancel superseded builds, and never execute source received through the diagnostics
-inspector. A later state-restoration contract must be versioned and application-
-controlled rather than reflecting arbitrary Go memory.
-
+The implemented `gonative dev <ios|android>` workflow hashes project Go sources,
+module files, assets, and `gonative.yaml`, while excluding generated build output.
+It keeps the last working application installed when a build fails and reuses the
+native framework artifact after the initial build. Each development daemon assigns
+a session ID to the generated Go bridge. `ui.UseReloadState` persists explicitly
+selected JSON values under that session and restores them before the next initial
+render. Arbitrary Go memory, effects, native handles, focus, and keyboard state are
+intentionally not reflected or restored.

@@ -177,6 +177,20 @@ func TestInitCreatesCompleteNativeScaffold(t *testing.T) {
 		t.Fatalf("Android launcher contains framework implementation:\n%s", launcher)
 	}
 
+	iosBridge, err := os.ReadFile(filepath.Join(destination, "ios", "bridge", "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	androidBridge, err := os.ReadFile(filepath.Join(destination, "android", "bridge", "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, bridge := range map[string][]byte{"ios bridge": iosBridge, "android bridge": androidBridge} {
+		if !strings.Contains(string(bridge), "goNativeReloadSession") || !strings.Contains(string(bridge), "ui.ConfigureReloadState") {
+			t.Fatalf("%s missing Fast Reload setup", path)
+		}
+	}
+
 	if !strings.Contains(out.String(), "Created ") {
 		t.Fatalf("unexpected output: %s", out.String())
 	}

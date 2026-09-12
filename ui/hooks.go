@@ -24,6 +24,7 @@ const (
 	hookEffect
 	hookLayoutEffect
 	hookFocusNode
+	hookReloadState
 )
 
 type hookSlot struct {
@@ -279,6 +280,25 @@ func UseState[T any](context BuildContext, initial T) *State[T] {
 	state, ok := slot.value.(*State[T])
 	if !ok {
 		panic("ui: UseState type changed at " + context.Path)
+	}
+	return state
+}
+
+// UseReloadState creates state that survives development Fast Reload restarts.
+// The state behaves exactly like UseState when reload persistence is disabled.
+// Values must be JSON serializable and key must remain stable for the component.
+func UseReloadState[T any](context BuildContext, key string, initial T) *State[T] {
+	registry, scope := hookContext(context)
+	slot := registry.next(scope, hookReloadState)
+	if !slot.ready {
+		pathKey := context.Path + ":" + key
+		value, persist := restoreReloadValue(pathKey, initial)
+		slot.value = newObservedState(value, registry.scheduler, persist)
+		slot.ready = true
+	}
+	state, ok := slot.value.(*State[T])
+	if !ok {
+		panic("ui: UseReloadState type changed at " + context.Path)
 	}
 	return state
 }

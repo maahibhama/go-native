@@ -39,10 +39,12 @@ for abi in $ABIS; do
     mkdir -p "$LIB_BUILD/$abi"
     (
         cd "$ROOT"
+        reload_ldflags=
+        if [ -n "${GONATIVE_RELOAD_SESSION:-}" ]; then reload_ldflags="-X main.goNativeReloadSession=$GONATIVE_RELOAD_SESSION"; fi
         CGO_ENABLED=1 GOOS=android GOARCH="$goarch" \
         CC="$TOOLCHAIN/bin/$compiler" \
         CGO_CFLAGS="--sysroot=$TOOLCHAIN/sysroot -I$TOOLCHAIN/sysroot/usr/include" \
-        go build -buildmode=c-shared -o "$LIB_BUILD/$abi/libgonative.so" ./android/bridge
+        go build -ldflags "$reload_ldflags" -buildmode=c-shared -o "$LIB_BUILD/$abi/libgonative.so" ./android/bridge
     )
     rm -f "$LIB_BUILD/$abi/libgonative.h"
 done
